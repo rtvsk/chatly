@@ -28,15 +28,21 @@ This project uses Docker Compose for local development:
 
 ### ▶️ Start
 
-bash docker compose -f infra/docker-compose.yml up -d 
+```bash
+docker compose -f infra/docker-compose.yml up -d
+```
 
 ### ⏹ Stop
 
-bash docker compose -f infra/docker-compose.yml down 
+```bash
+docker compose -f infra/docker-compose.yml down
+```
 
 ### 🧹 Remove everything (including data)
 
-bash docker compose -f infra/docker-compose.yml down -v 
+```bash
+docker compose -f infra/docker-compose.yml down -v
+```
 
 ---
 
@@ -57,7 +63,9 @@ Login:    minioadmin Password: minioadmin
 
 ## 🧠 Backend (NestJS)
 
-bash cd apps/backend npm install npm run start:dev 
+```bash
+cd apps/backend npm install npm run start:dev
+```
 
 Default:
 
@@ -67,7 +75,9 @@ http://localhost:3000
 
 ## 📱 Mobile (Flutter)
 
-bash cd apps/mobile flutter pub get flutter run 
+```bash
+cd apps/mobile flutter pub get flutter run
+```
 
 ---
 
@@ -75,7 +85,14 @@ bash cd apps/mobile flutter pub get flutter run
 
 Backend (apps/backend/.env):
 
-DATABASE_URL=postgresql://chatly:chatly@localhost:5432/chatly REDIS_HOST=localhost REDIS_PORT=6379  S3_ENDPOINT=http://localhost:9000 S3_ACCESS_KEY=minioadmin S3_SECRET_KEY=minioadmin
+```bash
+DATABASE_URL=postgresql://chatly:chatly@localhost:5432/chatly
+REDIS_HOST=localhost
+REDIS_PORT=6379
+S3_ENDPOINT=http://localhost:9000
+S3_ACCESS_KEY=minioadmin
+S3_SECRET_KEY=minioadmin
+```
 
 ---
 

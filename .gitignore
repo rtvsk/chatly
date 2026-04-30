@@ -1,0 +1,11 @@
+# Node
+node_modules
+dist
+
+# Flutter
+.build
+.dart_tool
+.packages
+
+# Env
+.env

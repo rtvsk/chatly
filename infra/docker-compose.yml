@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: chatly_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chatly
+      POSTGRES_PASSWORD: chatly
+      POSTGRES_DB: chatly
+    ports:
+      - "5432:5432"
+    volumes:
+      - chatly_postgres_data:/var/lib/postgresql/data
+    networks:
+      - chatly_network
+
+  redis:
+    image: redis:7
+    container_name: chatly_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - chatly_network
+
+  minio:
+    image: quay.io/minio/minio
+    container_name: chatly_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - chatly_minio_data:/data
+    networks:
+      - chatly_network
+
+volumes:
+  chatly_postgres_data:
+  chatly_minio_data:
+
+networks:
+  chatly_network:
+    driver: bridge

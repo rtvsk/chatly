@@ -1,55 +1,55 @@
 # Chatly
 
-Chatly — это pet-проект чат-приложения.
+Chatly is a pet project for building a chat application.
 
-## 🧱 Стек
+## 🧱 Tech Stack
 
 - Mobile: Flutter (iOS)
 - Backend: NestJS
 - Database: PostgreSQL
 - Cache / PubSub: Redis
-- Storage: MinIO (S3-совместимое хранилище)
+- Storage: MinIO (S3-compatible storage)
 
 ---
 
-## 📁 Структура проекта
+## 📁 Project Structure
 
-chatly/   apps/     mobile/     # Flutter приложение     backend/    # NestJS API   infra/     docker-compose.yml
+ chatly/   apps/     mobile/     # Flutter application     backend/    # NestJS API   infra/     docker-compose.yml
 
 ---
 
-## 🚀 Запуск инфраструктуры (Docker)
+## 🚀 Running Infrastructure (Docker)
 
-В проекте используется Docker Compose для локального запуска:
+This project uses Docker Compose for local development:
 
 - PostgreSQL
 - Redis
 - MinIO
 
-### ▶️ Запуск
+### ▶️ Start
 
 bash docker compose -f infra/docker-compose.yml up -d 
 
-### ⏹ Остановка
+### ⏹ Stop
 
 bash docker compose -f infra/docker-compose.yml down 
 
-### 🧹 Полное удаление (включая данные)
+### 🧹 Remove everything (including data)
 
 bash docker compose -f infra/docker-compose.yml down -v 
 
 ---
 
-## 🔌 Доступ к сервисам
+## 🔌 Services Access
 
-| Сервис     | URL / Host              |
+| Service    | URL / Host              |
 |------------|-------------------------|
 | PostgreSQL | localhost:5432          |
 | Redis      | localhost:6379          |
 | MinIO API  | http://localhost:9000   |
 | MinIO UI   | http://localhost:9001   |
 
-### MinIO доступ
+### MinIO Credentials
 
 Login:    minioadmin Password: minioadmin
 
@@ -59,7 +59,7 @@ Login:    minioadmin Password: minioadmin
 
 bash cd apps/backend npm install npm run start:dev 
 
-По умолчанию:
+Default:
 
 http://localhost:3000
 
@@ -71,7 +71,7 @@ bash cd apps/mobile flutter pub get flutter run
 
 ---
 
-## ⚙️ Переменные окружения (пример)
+## ⚙️ Environment Variables (example)
 
 Backend (apps/backend/.env):
 
@@ -79,10 +79,10 @@ DATABASE_URL=postgresql://chatly:chatly@localhost:5432/chatly REDIS_HOST=localho
 
 ---
 
-## 📌 Заметки
+## 📌 Notes
 
-- Backend и Flutter запускаются локально (без Docker) для удобной разработки
-- Docker используется только для инфраструктуры
-- Данные PostgreSQL и MinIO сохраняются между перезапусками контейнеров
+- Backend and Flutter apps run locally (no Docker) for better development experience
+- Docker is used only for infrastructure services
+- PostgreSQL and MinIO data persist between container restarts
 
 --

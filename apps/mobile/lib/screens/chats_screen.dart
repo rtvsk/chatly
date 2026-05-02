@@ -1,3 +1,4 @@
+import 'package:chatly/services/api_service.dart';
 import 'package:flutter/material.dart';
 
 import '../storage/token_storage.dart';
@@ -23,6 +24,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final savedLogin = await TokenStorage.instance.getUserLogin();
 
     if (!mounted) return;
+
+    final response = await ApiService.instance.get('/chats');
+    print(response.statusCode);
+    print(response.body);
 
     setState(() {
       login = savedLogin;

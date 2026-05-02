@@ -1,11 +1,12 @@
 import 'dart:convert';
 
+import 'package:chatly/constants.dart';
 import 'package:http/http.dart' as http;
 
 import '../storage/token_storage.dart';
 
 class AuthService {
-  static const String _baseUrl = 'http://localhost:3000';
+  // static const String _baseUrl = 'http://localhost:3000';
 
   Future<bool> refreshSession() async {
     final refreshToken = await TokenStorage.instance.getRefreshToken();
@@ -16,7 +17,7 @@ class AuthService {
 
     try {
       final response = await http.post(
-        Uri.parse('$_baseUrl/auth/refresh'),
+        Uri.parse('${Constants.baseUrl}/auth/refresh'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -52,7 +53,7 @@ class AuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$_baseUrl/auth/signup'),
+        Uri.parse('${Constants.baseUrl}/auth/signup'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -87,7 +88,7 @@ class AuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$_baseUrl/auth/signin'),
+        Uri.parse('${Constants.baseUrl}/auth/signin'),
         headers: {
           'Content-Type': 'application/json',
         },

@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 
 import { RefreshToken } from '../auth/refresh-token.entity';
+import { Friendship } from 'src/friendships/friendship.entity';
 
 @Entity('users')
 export class User {
@@ -22,6 +23,12 @@ export class User {
 
   @OneToMany(() => RefreshToken, (token) => token.user)
   refreshTokens: RefreshToken[];
+
+  @OneToMany(() => Friendship, (friendship) => friendship.requester)
+  sentFriendRequests: Friendship[];
+
+  @OneToMany(() => Friendship, (friendship) => friendship.receiver)
+  receivedFriendRequests: Friendship[];
 
   @CreateDateColumn()
   createdAt: Date;

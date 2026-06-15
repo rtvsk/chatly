@@ -14,7 +14,14 @@ Chatly is a pet project for building a chat application.
 
 ## 📁 Project Structure
 
- chatly/   apps/     mobile/     # Flutter application     backend/    # NestJS API   infra/     docker-compose.yml
+```text
+chatly/
+  apps/
+    mobile/     # Flutter application
+    backend/    # NestJS API
+  infra/
+    docker-compose.yml
+```
 
 ---
 
@@ -57,14 +64,17 @@ docker compose -f infra/docker-compose.yml down -v
 
 ### MinIO Credentials
 
-Login:    minioadmin Password: minioadmin
+Login:    minioadmin
+Password: minioadmin
 
 ---
 
 ## 🧠 Backend (NestJS)
 
 ```bash
-cd apps/backend npm install npm run start:dev
+cd apps/backend
+npm install
+npm run start:dev
 ```
 
 Default:
@@ -76,7 +86,9 @@ http://localhost:3000
 ## 📱 Mobile (Flutter)
 
 ```bash
-cd apps/mobile flutter pub get flutter run
+cd apps/mobile
+flutter pub get
+flutter run
 ```
 
 ---

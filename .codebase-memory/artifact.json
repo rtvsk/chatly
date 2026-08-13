@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "7828dd86137d6f6eee091f7c995688c28d1db429",
-    "indexed_at": "2026-08-13T18:57:00Z",
+    "commit": "f1f5c3e19b0bfbfc6b49481f68e9d8bcdc915e84",
+    "indexed_at": "2026-08-13T19:40:57Z",
     "project": "chatly",
-    "nodes": 631,
-    "edges": 1124,
-    "original_size": 2031616,
-    "compressed_size": 351184,
-    "compression_level": 9
+    "nodes": 746,
+    "edges": 1223,
+    "original_size": 2621440,
+    "compressed_size": 422546,
+    "compression_level": 3
 }

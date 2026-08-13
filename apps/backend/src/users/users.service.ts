@@ -1,23 +1,24 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { User } from './user.entity';
-import { Repository } from 'typeorm';
+import { eq } from 'drizzle-orm';
+
+import { DatabaseService } from '../database/database.service';
+import { users } from '../database/schema';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectRepository(User)
-    private readonly usersRepository: Repository<User>,
-  ) {}
+  constructor(private readonly database: DatabaseService) {}
 
   async findByLogin(login: string) {
-    return this.usersRepository.findOne({
-      where: { login },
-      select: {
-        id: true,
-        login: true,
-        createdAt: true,
-      },
-    });
+    const [user] = await this.database.db
+      .select({
+        id: users.id,
+        login: users.login,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.login, login))
+      .limit(1);
+
+    return user ?? null;
   }
 }

@@ -9,7 +9,7 @@ files may override them for their subdirectories.
 
 Chatly is a small monorepo:
 
-- `apps/backend`: NestJS 11 API written in TypeScript, using TypeORM and PostgreSQL.
+- `apps/backend`: NestJS 11 API written in TypeScript, using Drizzle ORM and PostgreSQL.
 - `apps/mobile`: Flutter client written in Dart. Product code lives under `lib/`.
 - `infra/docker-compose.yml`: local PostgreSQL, Redis, and MinIO services.
 
@@ -48,6 +48,7 @@ Backend, from `apps/backend`:
 ```bash
 npm ci
 npm run start:dev
+npm run db:check
 npm run build
 npm run lint
 npm test -- --runInBand
@@ -71,7 +72,9 @@ change, run the checks relevant to every app touched. Note that the backend
 ## Change guidelines
 
 - Keep backend features inside their existing NestJS feature modules and
-  follow the controller/service/entity separation already used in `src/`.
+  follow the controller/service separation already used in `src/`. Database
+  tables are defined centrally in `src/database/schema.ts` and changed through
+  versioned migrations under `apps/backend/drizzle`.
 - Keep Flutter application changes under `apps/mobile/lib` unless the task is
   explicitly platform-specific. Treat Flutter-generated platform scaffolding
   as generated code.

@@ -74,6 +74,7 @@ Password: minioadmin
 ```bash
 cd apps/backend
 npm install
+npm run db:migrate
 npm run start:dev
 ```
 
@@ -95,16 +96,41 @@ flutter run
 
 ## ⚙️ Environment Variables (example)
 
-Backend (apps/backend/.env):
+Backend (`apps/backend/.env`):
 
 ```bash
-DATABASE_URL=postgresql://chatly:chatly@localhost:5432/chatly
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_USER=chatly
+DATABASE_PASSWORD=chatly
+DATABASE_NAME=chatly
+JWT_ACCESS_SECRET=replace-me
+JWT_ACCESS_EXPIRES_IN=900
+JWT_REFRESH_SECRET=replace-me
+JWT_REFRESH_EXPIRES_IN=2592000
 REDIS_HOST=localhost
 REDIS_PORT=6379
 S3_ENDPOINT=http://localhost:9000
 S3_ACCESS_KEY=minioadmin
 S3_SECRET_KEY=minioadmin
 ```
+
+### Database schema
+
+The backend uses Drizzle ORM. Schema definitions live in
+`apps/backend/src/database/schema.ts`, and versioned SQL migrations live in
+`apps/backend/drizzle`.
+
+```bash
+cd apps/backend
+npm run db:generate  # generate SQL after a schema change
+npm run db:check     # validate migration metadata
+npm run db:migrate   # apply pending migrations
+```
+
+The initial Drizzle migration is intended for a clean database. Do not apply it
+directly to a database previously created by TypeORM `synchronize`; back up and
+baseline that database with `drizzle-kit pull --init` first.
 
 ---
 

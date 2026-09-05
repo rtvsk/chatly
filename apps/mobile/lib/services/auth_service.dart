@@ -109,7 +109,7 @@ class AuthService {
         refreshToken: data['refreshToken'] as String,
         userLogin: data['user']['login'] as String,
       );
-  
+
       return true;
     } catch (_) {
       return false;

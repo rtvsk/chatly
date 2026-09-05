@@ -1,12 +1,16 @@
 import {
+  boolean,
+  integer,
   pgEnum,
   pgTable,
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const chatTypeEnum = pgEnum('chats_type_enum', ['direct', 'group']);
 
@@ -36,6 +40,27 @@ export const refreshTokens = pgTable(
     createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
   },
   (table) => [unique('refresh_tokens_userId_key').on(table.userId)],
+);
+
+export const avatars = pgTable(
+  'avatars',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('userId')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    objectKey: varchar('objectKey').notNull().unique(),
+    originalName: varchar('originalName').notNull(),
+    mimeType: varchar('mimeType').notNull(),
+    size: integer('size').notNull(),
+    isSelected: boolean('isSelected').default(false).notNull(),
+    createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('avatars_one_selected_per_user_idx')
+      .on(table.userId)
+      .where(sql`${table.isSelected} = true`),
+  ],
 );
 
 export const chats = pgTable('chats', {
@@ -104,3 +129,4 @@ export const friendships = pgTable(
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type Avatar = typeof avatars.$inferSelect;

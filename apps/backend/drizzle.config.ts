@@ -30,6 +30,7 @@ export default defineConfig({
     'chat_participants',
     'messages',
     'friendships',
+    'avatars',
   ],
   strict: true,
   verbose: true,

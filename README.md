@@ -90,6 +90,11 @@ http://localhost:3000
 cd apps/mobile
 flutter pub get
 flutter run
+
+# запуск iPhone 17 Pro
+xcrun simctl boot "iPhone 17 Pro"
+# запуск для использования mcp агентом
+flutter run -d "iPhone 17 Pro" --dart-define=ENABLE_FLUTTER_DRIVER=true
 ```
 
 ---
@@ -113,6 +118,7 @@ REDIS_PORT=6379
 S3_ENDPOINT=http://localhost:9000
 S3_ACCESS_KEY=minioadmin
 S3_SECRET_KEY=minioadmin
+S3_AVATARS_BUCKET=chatly-avatars
 ```
 
 ### Database schema

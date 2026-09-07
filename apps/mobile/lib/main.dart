@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
 import 'package:flutter_driver/driver_extension.dart';
 
+import 'navigation/app_navigation.dart';
+import 'screens/signup_screen.dart';
+
 void main() {
   if (const bool.fromEnvironment('ENABLE_FLUTTER_DRIVER')) {
     enableFlutterDriverExtension();
@@ -15,8 +18,10 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: SplashScreen(),
+    return MaterialApp(
+      navigatorKey: AppNavigation.navigatorKey,
+      routes: {AppNavigation.signupRoute: (_) => const SignupScreen()},
+      home: const SplashScreen(),
     );
   }
 }

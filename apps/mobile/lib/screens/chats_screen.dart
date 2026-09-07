@@ -5,6 +5,7 @@ import '../constants.dart';
 import '../models/avatar.dart';
 import '../services/avatar_service.dart';
 import '../storage/token_storage.dart';
+import '../widgets/chatly_bottom_navigation_bar.dart';
 import './profile_screen.dart';
 import './signup_screen.dart';
 
@@ -153,30 +154,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
         ],
       ),
 
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: ChatlyBottomNavigationBar(
         selectedIndex: currentIndex,
         onDestinationSelected: (index) {
           setState(() {
             currentIndex = index;
           });
         },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.contacts_outlined),
-            selectedIcon: Icon(Icons.contacts),
-            label: 'Contacts',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: 'Chats',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Profile',
-          ),
-        ],
       ),
     );
   }

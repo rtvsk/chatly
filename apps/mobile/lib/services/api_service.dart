@@ -4,6 +4,7 @@ import 'package:chatly/constants.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
+import '../navigation/app_navigation.dart';
 import 'auth_service.dart';
 import '../storage/token_storage.dart';
 
@@ -97,9 +98,13 @@ class ApiService {
       return response;
     }
 
-    final refreshed = await _authService.refreshSession();
+    final refreshResult = await _authService.refreshSession();
 
-    if (!refreshed) {
+    if (refreshResult == RefreshSessionResult.unauthorized) {
+      AppNavigation.showSignup();
+    }
+
+    if (refreshResult != RefreshSessionResult.refreshed) {
       return response;
     }
 

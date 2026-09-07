@@ -38,12 +38,7 @@ class _SplashScreenState extends State<SplashScreen>
     _scaleAnimation = Tween<double>(
       begin: 0.85,
       end: 1.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutBack,
-      ),
-    );
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
 
     _controller.forward();
 
@@ -51,7 +46,8 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _checkSession() async {
-    final isAuthenticated = await _authService.refreshSession();
+    final refreshResult = await _authService.refreshSession();
+    final isAuthenticated = refreshResult == RefreshSessionResult.refreshed;
 
     if (!mounted) return;
 
@@ -83,11 +79,7 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Image.asset(
-                  'assets/chatly-icon.png',
-                  width: 128,
-                  height: 128,
-                ),
+                Image.asset('assets/chatly-icon.png', width: 128, height: 128),
                 const SizedBox(height: 18),
                 const Text(
                   'Chatly',

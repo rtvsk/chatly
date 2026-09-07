@@ -93,6 +93,8 @@ flutter run
 
 # запуск iPhone 17 Pro
 xcrun simctl boot "iPhone 17 Pro"
+# запуск iPhone 11
+xcrun simctl boot "iPhone 11"
 # запуск для использования mcp агентом
 flutter run -d "iPhone 17 Pro" --dart-define=ENABLE_FLUTTER_DRIVER=true
 ```

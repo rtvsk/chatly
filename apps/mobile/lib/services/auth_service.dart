@@ -5,30 +5,33 @@ import 'package:http/http.dart' as http;
 
 import '../storage/token_storage.dart';
 
+enum RefreshSessionResult { refreshed, noToken, unauthorized, failed }
+
 class AuthService {
   // static const String _baseUrl = 'http://localhost:3000';
 
-  Future<bool> refreshSession() async {
+  Future<RefreshSessionResult> refreshSession() async {
     final refreshToken = await TokenStorage.instance.getRefreshToken();
 
     if (refreshToken == null || refreshToken.isEmpty) {
-      return false;
+      return RefreshSessionResult.noToken;
     }
 
     try {
       final response = await http.post(
         Uri.parse('${Constants.baseUrl}/auth/refresh'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'refreshToken': refreshToken,
-        }),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refreshToken': refreshToken}),
       );
+
+      if (response.statusCode == 401) {
+        await TokenStorage.instance.clearSession();
+        return RefreshSessionResult.unauthorized;
+      }
 
       if (response.statusCode != 200 && response.statusCode != 201) {
         await TokenStorage.instance.clearSession();
-        return false;
+        return RefreshSessionResult.failed;
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -39,10 +42,10 @@ class AuthService {
         userLogin: data['user']['login'] as String,
       );
 
-      return true;
+      return RefreshSessionResult.refreshed;
     } catch (_) {
       await TokenStorage.instance.clearSession();
-      return false;
+      return RefreshSessionResult.failed;
     }
   }
 
@@ -54,9 +57,7 @@ class AuthService {
     try {
       final response = await http.post(
         Uri.parse('${Constants.baseUrl}/auth/signup'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'login': login,
           'password': password,
@@ -82,28 +83,20 @@ class AuthService {
     }
   }
 
-  Future<bool> signin({
-    required String login,
-    required String password,
-  }) async {
+  Future<bool> signin({required String login, required String password}) async {
     try {
       final response = await http.post(
         Uri.parse('${Constants.baseUrl}/auth/signin'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'login': login,
-          'password': password,
-        }),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'login': login, 'password': password}),
       );
-  
+
       if (response.statusCode != 200 && response.statusCode != 201) {
         return false;
       }
-  
+
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-  
+
       await TokenStorage.instance.saveTokens(
         accessToken: data['accessToken'] as String,
         refreshToken: data['refreshToken'] as String,

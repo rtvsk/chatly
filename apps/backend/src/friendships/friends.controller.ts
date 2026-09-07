@@ -32,6 +32,30 @@ export class FriendsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('reject/:friendshipId')
+  async rejectRequest(
+    @Req() req: RequestWithUser,
+    @Param('friendshipId') friendshipId: string,
+  ) {
+    return this.friendsService.rejectRequest(req.user.sub, friendshipId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('requests')
+  async getIncomingRequests(@Req() req: RequestWithUser) {
+    return this.friendsService.getIncomingRequests(req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('status/:userId')
+  async getFriendshipStatus(
+    @Req() req: RequestWithUser,
+    @Param('userId') userId: string,
+  ) {
+    return this.friendsService.getFriendshipStatus(req.user.sub, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get()
   async getMyFriends(@Req() req: RequestWithUser) {
     return this.friendsService.getMyFriends(req.user.sub);

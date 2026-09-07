@@ -8,10 +8,12 @@ import '../models/avatar.dart';
 import '../models/contact.dart';
 import '../services/avatar_service.dart';
 import '../services/contacts_service.dart';
+import '../services/friends_service.dart';
 import '../storage/token_storage.dart';
 import '../widgets/chatly_bottom_navigation_bar.dart';
 import './profile_screen.dart';
 import './signup_screen.dart';
+import './user_profile_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
@@ -20,14 +22,29 @@ class ChatsScreen extends StatefulWidget {
 }
 
 class _ChatsScreenState extends State<ChatsScreen> {
+  final FriendsService _friendsService = const FriendsService();
+  final GlobalKey<_ContactsTabState> _contactsKey = GlobalKey();
+  Timer? _notificationsTimer;
   String? login;
   Avatar? currentAvatar;
   int currentIndex = 0;
+  int notificationCount = 0;
 
   @override
   void initState() {
     super.initState();
     _loadLogin();
+    _refreshNotifications();
+    _notificationsTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _refreshNotifications(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _notificationsTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadLogin() async {
@@ -68,6 +85,23 @@ class _ChatsScreenState extends State<ChatsScreen> {
     });
   }
 
+  Future<void> _refreshNotifications() async {
+    try {
+      final requests = await _friendsService.getIncomingRequests();
+      if (!mounted) return;
+      setState(() => notificationCount = requests.length);
+    } catch (_) {
+      // Keep the authenticated screen usable when notifications fail to load.
+    }
+  }
+
+  Future<void> _refreshFriendships() async {
+    await Future.wait([
+      _refreshNotifications(),
+      _contactsKey.currentState?._loadContacts() ?? Future<void>.value(),
+    ]);
+  }
+
   Future<void> _logout() async {
     await TokenStorage.instance.clearSession();
 
@@ -83,9 +117,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final userLogin = login ?? 'Loading...';
 
     final pages = [
-      const ContactsTab(),
+      ContactsTab(key: _contactsKey),
       const ChatsTab(),
-      ProfileTab(login: userLogin, onAvatarsChanged: _refreshCurrentAvatar),
+      ProfileTab(
+        login: userLogin,
+        onAvatarsChanged: _refreshCurrentAvatar,
+        onNotificationsChanged: _refreshFriendships,
+      ),
     ];
 
     return Scaffold(
@@ -160,10 +198,18 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
       bottomNavigationBar: ChatlyBottomNavigationBar(
         selectedIndex: currentIndex,
+        profileBadgeCount: notificationCount,
         onDestinationSelected: (index) {
           setState(() {
             currentIndex = index;
           });
+          if (index == 0) {
+            unawaited(
+              _contactsKey.currentState?._loadContacts() ??
+                  Future<void>.value(),
+            );
+          }
+          if (index == 2) unawaited(_refreshNotifications());
         },
       ),
     );
@@ -174,9 +220,11 @@ class ContactsTab extends StatefulWidget {
   const ContactsTab({
     super.key,
     this.contactsService = const ContactsService(),
+    this.friendsService = const FriendsService(),
   });
 
   final ContactsService contactsService;
+  final FriendsService friendsService;
 
   @override
   State<ContactsTab> createState() => _ContactsTabState();
@@ -373,6 +421,14 @@ class _ContactsTabState extends State<ContactsTab> {
             child: const Icon(Icons.person),
           ),
           title: Text(contact.login),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => UserProfileScreen(
+                user: contact,
+                friendsService: widget.friendsService,
+              ),
+            ),
+          ),
         );
       },
     );

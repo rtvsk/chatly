@@ -3,15 +3,17 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, or } from 'drizzle-orm';
+import { and, desc, eq, or } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { DatabaseService } from '../database/database.service';
-import { friendships, users } from '../database/schema';
+import { avatars, friendships, users } from '../database/schema';
 import { FriendshipStatus } from './enums/friendship-status.enum';
 
 const requester = alias(users, 'requester');
 const receiver = alias(users, 'receiver');
+const requesterAvatar = alias(avatars, 'requester_avatar');
+const receiverAvatar = alias(avatars, 'receiver_avatar');
 
 @Injectable()
 export class FriendsService {
@@ -33,7 +35,10 @@ export class FriendsService {
     }
 
     const [existing] = await this.database.db
-      .select({ id: friendships.id })
+      .select({
+        id: friendships.id,
+        status: friendships.status,
+      })
       .from(friendships)
       .where(
         or(
@@ -48,6 +53,21 @@ export class FriendsService {
         ),
       )
       .limit(1);
+
+    if (existing?.status === 'rejected') {
+      const [friendship] = await this.database.db
+        .update(friendships)
+        .set({
+          requesterId,
+          receiverId,
+          status: FriendshipStatus.PENDING,
+          updatedAt: new Date(),
+        })
+        .where(eq(friendships.id, existing.id))
+        .returning();
+
+      return friendship;
+    }
 
     if (existing) {
       throw new BadRequestException('Friend request already exists');
@@ -88,6 +108,107 @@ export class FriendsService {
     return friendship;
   }
 
+  async rejectRequest(userId: string, friendshipId: string) {
+    const [friendship] = await this.database.db
+      .update(friendships)
+      .set({
+        status: FriendshipStatus.REJECTED,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(friendships.id, friendshipId),
+          eq(friendships.receiverId, userId),
+          eq(friendships.status, FriendshipStatus.PENDING),
+        ),
+      )
+      .returning();
+
+    if (!friendship) {
+      throw new NotFoundException('Friend request not found');
+    }
+
+    return friendship;
+  }
+
+  async getIncomingRequests(userId: string) {
+    const requests = await this.database.db
+      .select({
+        friendshipId: friendships.id,
+        createdAt: friendships.createdAt,
+        requester: {
+          id: requester.id,
+          login: requester.login,
+          avatarId: requesterAvatar.id,
+        },
+      })
+      .from(friendships)
+      .innerJoin(requester, eq(friendships.requesterId, requester.id))
+      .leftJoin(
+        requesterAvatar,
+        and(
+          eq(requesterAvatar.userId, requester.id),
+          eq(requesterAvatar.isSelected, true),
+        ),
+      )
+      .where(
+        and(
+          eq(friendships.receiverId, userId),
+          eq(friendships.status, FriendshipStatus.PENDING),
+        ),
+      )
+      .orderBy(desc(friendships.createdAt));
+
+    return requests.map(({ friendshipId, createdAt, requester: user }) => ({
+      friendshipId,
+      createdAt,
+      user: {
+        id: user.id,
+        login: user.login,
+        avatarUrl: user.avatarId ? `/avatars/${user.avatarId}/file` : null,
+      },
+    }));
+  }
+
+  async getFriendshipStatus(userId: string, otherUserId: string) {
+    const [friendship] = await this.database.db
+      .select({
+        id: friendships.id,
+        requesterId: friendships.requesterId,
+        status: friendships.status,
+      })
+      .from(friendships)
+      .where(
+        or(
+          and(
+            eq(friendships.requesterId, userId),
+            eq(friendships.receiverId, otherUserId),
+          ),
+          and(
+            eq(friendships.requesterId, otherUserId),
+            eq(friendships.receiverId, userId),
+          ),
+        ),
+      )
+      .limit(1);
+
+    if (!friendship || friendship.status === 'rejected') {
+      return { status: 'none', friendshipId: null };
+    }
+
+    if (friendship.status === 'accepted') {
+      return { status: 'friends', friendshipId: friendship.id };
+    }
+
+    return {
+      status:
+        friendship.requesterId === userId
+          ? 'outgoing_pending'
+          : 'incoming_pending',
+      friendshipId: friendship.id,
+    };
+  }
+
   async getMyFriends(userId: string) {
     const friendshipRows = await this.database.db
       .select({
@@ -95,15 +216,31 @@ export class FriendsService {
         requester: {
           id: requester.id,
           login: requester.login,
+          avatarId: requesterAvatar.id,
         },
         receiver: {
           id: receiver.id,
           login: receiver.login,
+          avatarId: receiverAvatar.id,
         },
       })
       .from(friendships)
       .innerJoin(requester, eq(friendships.requesterId, requester.id))
       .innerJoin(receiver, eq(friendships.receiverId, receiver.id))
+      .leftJoin(
+        requesterAvatar,
+        and(
+          eq(requesterAvatar.userId, requester.id),
+          eq(requesterAvatar.isSelected, true),
+        ),
+      )
+      .leftJoin(
+        receiverAvatar,
+        and(
+          eq(receiverAvatar.userId, receiver.id),
+          eq(receiverAvatar.isSelected, true),
+        ),
+      )
       .where(
         and(
           eq(friendships.status, FriendshipStatus.ACCEPTED),
@@ -123,6 +260,7 @@ export class FriendsService {
       return {
         id: friend.id,
         login: friend.login,
+        avatarUrl: friend.avatarId ? `/avatars/${friend.avatarId}/file` : null,
       };
     });
   }

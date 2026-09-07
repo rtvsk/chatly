@@ -5,12 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   Widget buildSubject({
     required int selectedIndex,
+    int profileBadgeCount = 0,
     ValueChanged<int>? onDestinationSelected,
   }) {
     return MaterialApp(
       home: Scaffold(
         bottomNavigationBar: ChatlyBottomNavigationBar(
           selectedIndex: selectedIndex,
+          profileBadgeCount: profileBadgeCount,
           onDestinationSelected: onDestinationSelected ?? (_) {},
         ),
       ),
@@ -65,6 +67,18 @@ void main() {
     await tester.pump();
 
     expect(selectedIndex, 2);
+  });
+
+  testWidgets('shows the notification count on the profile destination', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      buildSubject(selectedIndex: 0, profileBadgeCount: 3),
+    );
+
+    expect(find.text('3'), findsOneWidget);
+    final badge = tester.widget<Badge>(find.byType(Badge).last);
+    expect(badge.backgroundColor, Colors.red);
   });
 
   testWidgets('keeps hidden destinations accessible', (tester) async {

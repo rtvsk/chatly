@@ -4,8 +4,10 @@ class ChatlyBottomNavigationBar extends StatelessWidget {
   const ChatlyBottomNavigationBar({
     required this.selectedIndex,
     required this.onDestinationSelected,
+    this.profileBadgeCount = 0,
     super.key,
-  }) : assert(selectedIndex >= 0 && selectedIndex < _destinations.length);
+  }) : assert(selectedIndex >= 0 && selectedIndex < _destinations.length),
+       assert(profileBadgeCount >= 0);
 
   static const _animationDuration = Duration(milliseconds: 220);
   static const _destinations = [
@@ -28,6 +30,7 @@ class ChatlyBottomNavigationBar extends StatelessWidget {
 
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
+  final int profileBadgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +64,7 @@ class ChatlyBottomNavigationBar extends StatelessWidget {
                     child: _ChatlyNavigationButton(
                       destination: _destinations[index],
                       isSelected: selectedIndex == index,
+                      badgeCount: index == 2 ? profileBadgeCount : 0,
                       onTap: () => onDestinationSelected(index),
                     ),
                   ),
@@ -77,11 +81,13 @@ class _ChatlyNavigationButton extends StatelessWidget {
   const _ChatlyNavigationButton({
     required this.destination,
     required this.isSelected,
+    required this.badgeCount,
     required this.onTap,
   });
 
   final _ChatlyNavigationDestination destination;
   final bool isSelected;
+  final int badgeCount;
   final VoidCallback onTap;
 
   @override
@@ -92,7 +98,9 @@ class _ChatlyNavigationButton extends StatelessWidget {
       key: ValueKey('bottom-nav-${destination.label}'),
       button: true,
       selected: isSelected,
-      label: destination.label,
+      label: badgeCount > 0
+          ? '${destination.label}, $badgeCount notifications'
+          : destination.label,
       onTap: onTap,
       child: ExcludeSemantics(
         child: Padding(
@@ -120,13 +128,20 @@ class _ChatlyNavigationButton extends StatelessWidget {
                     duration: ChatlyBottomNavigationBar._animationDuration,
                     switchInCurve: Curves.easeOutCubic,
                     switchOutCurve: Curves.easeOutCubic,
-                    child: Icon(
-                      isSelected ? destination.selectedIcon : destination.icon,
-                      key: ValueKey(isSelected),
-                      size: isSelected ? 30 : 28,
-                      color: isSelected
-                          ? colorScheme.primary
-                          : colorScheme.onSurfaceVariant,
+                    child: Badge.count(
+                      key: ValueKey('$isSelected-$badgeCount'),
+                      count: badgeCount,
+                      isLabelVisible: badgeCount > 0,
+                      backgroundColor: Colors.red,
+                      child: Icon(
+                        isSelected
+                            ? destination.selectedIcon
+                            : destination.icon,
+                        size: isSelected ? 30 : 28,
+                        color: isSelected
+                            ? colorScheme.primary
+                            : colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),

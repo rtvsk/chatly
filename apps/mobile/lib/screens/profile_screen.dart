@@ -5,22 +5,79 @@ import '../constants.dart';
 import '../models/avatar.dart';
 import '../services/api_service.dart';
 import '../services/avatar_service.dart';
+import '../services/friends_service.dart';
+import 'notifications_screen.dart';
 
-class ProfileTab extends StatefulWidget {
+class ProfileTab extends StatelessWidget {
   const ProfileTab({
     required this.login,
     required this.onAvatarsChanged,
+    required this.onNotificationsChanged,
+    this.friendsService = const FriendsService(),
     super.key,
   });
 
   final String login;
   final Future<void> Function() onAvatarsChanged;
+  final Future<void> Function() onNotificationsChanged;
+  final FriendsService friendsService;
 
   @override
-  State<ProfileTab> createState() => _ProfileTabState();
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(8, 20, 8, 24),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(login, style: Theme.of(context).textTheme.headlineSmall),
+        ),
+        const SizedBox(height: 20),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.account_circle_outlined),
+                title: const Text('Set up avatars'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        SetUpAvatarsScreen(onAvatarsChanged: onAvatarsChanged),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.notifications_outlined),
+                title: const Text('Notifications'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => NotificationsScreen(
+                      friendsService: friendsService,
+                      onNotificationsChanged: onNotificationsChanged,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-class _ProfileTabState extends State<ProfileTab> {
+class SetUpAvatarsScreen extends StatefulWidget {
+  const SetUpAvatarsScreen({required this.onAvatarsChanged, super.key});
+
+  final Future<void> Function() onAvatarsChanged;
+
+  @override
+  State<SetUpAvatarsScreen> createState() => _SetUpAvatarsScreenState();
+}
+
+class _SetUpAvatarsScreenState extends State<SetUpAvatarsScreen> {
   final AvatarService _avatarService = const AvatarService();
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -123,91 +180,90 @@ class _ProfileTabState extends State<ProfileTab> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        _reload();
-        await _avatars;
-        await widget.onAvatarsChanged();
-      },
-      child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.login,
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Tap an avatar to make it current.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _isMutating ? null : _addAvatar,
-                      icon: const Icon(Icons.add_photo_alternate_outlined),
-                      label: const Text('Add avatar'),
+    return Scaffold(
+      appBar: AppBar(title: const Text('Set up avatars')),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          _reload();
+          await _avatars;
+          await widget.onAvatarsChanged();
+        },
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tap an avatar to make it current.',
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _isMutating ? null : _addAvatar,
+                        icon: const Icon(Icons.add_photo_alternate_outlined),
+                        label: const Text('Add avatar'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          FutureBuilder<List<Avatar>>(
-            future: _avatars,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _ErrorState(onRetry: _reload),
-                );
-              }
+            FutureBuilder<List<Avatar>>(
+              future: _avatars,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _ErrorState(onRetry: _reload),
+                  );
+                }
 
-              if (!snapshot.hasData) {
-                return const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
+                if (!snapshot.hasData) {
+                  return const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
 
-              final avatars = snapshot.data!;
-              if (avatars.isEmpty) {
-                return const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: Text('No avatars yet')),
-                );
-              }
+                final avatars = snapshot.data!;
+                if (avatars.isEmpty) {
+                  return const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: Text('No avatars yet')),
+                  );
+                }
 
-              return SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                sliver: SliverGrid.builder(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 180,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
+                return SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                  sliver: SliverGrid.builder(
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 180,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                        ),
+                    itemCount: avatars.length,
+                    itemBuilder: (context, index) {
+                      final avatar = avatars[index];
+                      return _AvatarTile(
+                        avatar: avatar,
+                        disabled: _isMutating,
+                        onSelect: () => _selectAvatar(avatar),
+                        onDelete: () => _deleteAvatar(avatar),
+                      );
+                    },
                   ),
-                  itemCount: avatars.length,
-                  itemBuilder: (context, index) {
-                    final avatar = avatars[index];
-                    return _AvatarTile(
-                      avatar: avatar,
-                      disabled: _isMutating,
-                      onSelect: () => _selectAvatar(avatar),
-                      onDelete: () => _deleteAvatar(avatar),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
-        ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

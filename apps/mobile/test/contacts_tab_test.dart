@@ -1,6 +1,8 @@
 import 'package:chatly/models/contact.dart';
+import 'package:chatly/models/friend_request.dart';
 import 'package:chatly/screens/chats_screen.dart';
 import 'package:chatly/services/contacts_service.dart';
+import 'package:chatly/services/friends_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -21,9 +23,21 @@ class FakeContactsService extends ContactsService {
   }
 }
 
-Widget _appWith(FakeContactsService service) {
+class FakeFriendsService extends FriendsService {
+  @override
+  Future<FriendshipState> getFriendshipStatus(String userId) async {
+    return FriendshipState.none;
+  }
+}
+
+Widget _appWith(FakeContactsService service, {FriendsService? friendsService}) {
   return MaterialApp(
-    home: Scaffold(body: ContactsTab(contactsService: service)),
+    home: Scaffold(
+      body: ContactsTab(
+        contactsService: service,
+        friendsService: friendsService ?? FakeFriendsService(),
+      ),
+    ),
   );
 }
 
@@ -89,6 +103,11 @@ void main() {
     );
     final image = avatar.foregroundImage! as NetworkImage;
     expect(image.url, 'http://localhost:3000/avatars/avatar-id/file');
+
+    await tester.tap(find.text('alex'));
+    await tester.pumpAndSettle();
+    expect(find.text('User profile'), findsOneWidget);
+    expect(find.text('Add friend'), findsOneWidget);
   });
 
   testWidgets(

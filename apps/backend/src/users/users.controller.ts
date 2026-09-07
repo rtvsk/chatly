@@ -1,6 +1,13 @@
-import { Controller, UseGuards, Get, Query } from '@nestjs/common';
+import { Controller, UseGuards, Get, Query, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UsersService } from './users.service';
+
+type RequestWithUser = Request & {
+  user: {
+    sub: string;
+    login: string;
+  };
+};
 
 @Controller('users')
 export class UsersController {
@@ -8,13 +15,7 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Get('search')
-  async searchByLogin(@Query('login') login: string) {
-    const user = await this.usersService.findByLogin(login);
-
-    if (!user) {
-      return null;
-    }
-
-    return user;
+  async searchByLogin(@Req() req: RequestWithUser, @Query('login') login = '') {
+    return this.usersService.searchByLogin(login, req.user.sub);
   }
 }

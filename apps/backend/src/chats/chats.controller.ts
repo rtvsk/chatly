@@ -20,8 +20,6 @@ export class ChatsController {
   async getMyChats(@Req() req: RequestWithUser) {
     const userId = req.user.sub;
 
-    console.log(`userId: `, userId);
-
     const chatIds = await this.chatsService.getMyChatIds(userId);
 
     return {

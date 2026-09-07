@@ -49,11 +49,8 @@ export class AvatarsController {
   }
 
   @Get(':id/file')
-  async getFile(@Req() req: RequestWithUser, @Param('id') id: string) {
-    const { avatar, stream } = await this.avatarsService.getFile(
-      req.user.sub,
-      id,
-    );
+  async getFile(@Param('id') id: string) {
+    const { avatar, stream } = await this.avatarsService.getFile(id);
 
     return new StreamableFile(stream, {
       type: avatar.mimeType,

@@ -91,4 +91,38 @@ describe('AvatarsService', () => {
       }),
     );
   });
+
+  it('allows an authenticated user to load another user avatar by id', async () => {
+    const avatar = {
+      id: 'avatar-id',
+      userId: 'another-user',
+      objectKey: 'another-user/avatar.png',
+      originalName: 'avatar.png',
+      mimeType: 'image/png',
+      size: 128,
+      isSelected: true,
+      createdAt: new Date('2026-09-07T12:00:00.000Z'),
+    };
+    const selectBuilder = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([avatar]),
+    };
+    const stream = { pipe: jest.fn() };
+    const minio = {
+      getObject: jest.fn().mockResolvedValue(stream),
+    };
+    const service = new AvatarsService(
+      {
+        db: { select: jest.fn().mockReturnValue(selectBuilder) },
+      } as unknown as DatabaseService,
+      minio as unknown as MinioService,
+    );
+
+    await expect(service.getFile('avatar-id')).resolves.toEqual({
+      avatar,
+      stream,
+    });
+    expect(minio.getObject).toHaveBeenCalledWith('another-user/avatar.png');
+  });
 });

@@ -127,8 +127,17 @@ export class AvatarsService {
     return { id: avatar.id };
   }
 
-  async getFile(userId: string, avatarId: string) {
-    const avatar = await this.findOwnedAvatar(userId, avatarId);
+  async getFile(avatarId: string) {
+    const [avatar] = await this.database.db
+      .select()
+      .from(avatars)
+      .where(eq(avatars.id, avatarId))
+      .limit(1);
+
+    if (!avatar) {
+      throw new NotFoundException('Avatar not found');
+    }
+
     const stream = await this.minio.getObject(avatar.objectKey);
 
     return { avatar, stream };

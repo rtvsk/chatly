@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:chatly/services/api_service.dart';
 import 'package:flutter/material.dart';
 
 import '../constants.dart';
 import '../models/avatar.dart';
+import '../models/contact.dart';
 import '../services/avatar_service.dart';
+import '../services/contacts_service.dart';
 import '../storage/token_storage.dart';
 import '../widgets/chatly_bottom_navigation_bar.dart';
 import './profile_screen.dart';
@@ -166,18 +170,209 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 }
 
-class ContactsTab extends StatelessWidget {
-  const ContactsTab({super.key});
+class ContactsTab extends StatefulWidget {
+  const ContactsTab({
+    super.key,
+    this.contactsService = const ContactsService(),
+  });
+
+  final ContactsService contactsService;
+
+  @override
+  State<ContactsTab> createState() => _ContactsTabState();
+}
+
+class _ContactsTabState extends State<ContactsTab> {
+  static const _searchDelay = Duration(milliseconds: 400);
+
+  final _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  List<Contact> _contacts = const [];
+  List<Contact> _searchResults = const [];
+  bool _isLoadingContacts = true;
+  bool _isSearching = false;
+  bool _isSearchActive = false;
+  String? _contactsError;
+  String? _searchError;
+  int _searchRequestId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContacts();
+  }
+
+  Future<void> _loadContacts() async {
+    setState(() {
+      _isLoadingContacts = true;
+      _contactsError = null;
+    });
+
+    try {
+      final contacts = await widget.contactsService.getFriends();
+      if (!mounted) return;
+
+      setState(() {
+        _contacts = contacts;
+        _isLoadingContacts = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _contactsError = 'Failed to load contacts';
+        _isLoadingContacts = false;
+      });
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    final query = value.trim();
+    _searchDebounce?.cancel();
+    final requestId = ++_searchRequestId;
+
+    if (query.length < 3) {
+      setState(() {
+        _isSearchActive = false;
+        _isSearching = false;
+        _searchResults = const [];
+        _searchError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearchActive = true;
+      _isSearching = true;
+      _searchError = null;
+    });
+
+    _searchDebounce = Timer(_searchDelay, () => _search(query, requestId));
+  }
+
+  Future<void> _search(String query, int requestId) async {
+    try {
+      final results = await widget.contactsService.searchUsers(query);
+      if (!mounted || requestId != _searchRequestId) return;
+
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    } catch (_) {
+      if (!mounted || requestId != _searchRequestId) return;
+
+      setState(() {
+        _searchError = 'Search failed';
+        _isSearching = false;
+      });
+    }
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _onSearchChanged('');
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
+    return Column(
+      children: [
+        TextField(
+          key: const Key('contacts-search-field'),
+          controller: _searchController,
+          onChanged: _onSearchChanged,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Search by login',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _searchController.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: _clearSearch,
+                    icon: const Icon(Icons.clear),
+                  ),
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(child: _buildContent()),
+      ],
+    );
+  }
+
+  Widget _buildContent() {
+    if (_isSearchActive) {
+      if (_isSearching) {
+        return const Center(child: CircularProgressIndicator());
+      }
+
+      if (_searchError != null) {
+        return Center(child: Text(_searchError!));
+      }
+
+      if (_searchResults.isEmpty) {
+        return const Center(child: Text('No users found'));
+      }
+
+      return _buildContactsList(_searchResults);
+    }
+
+    if (_isLoadingContacts) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_contactsError != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_contactsError!),
+            const SizedBox(height: 8),
+            FilledButton(onPressed: _loadContacts, child: const Text('Retry')),
+          ],
+        ),
+      );
+    }
+
+    if (_contacts.isEmpty) {
+      return const Center(child: Text('No contacts'));
+    }
+
+    return _buildContactsList(_contacts);
+  }
+
+  Widget _buildContactsList(List<Contact> contacts) {
+    return ListView.separated(
       padding: EdgeInsets.zero,
-      itemCount: 30,
+      itemCount: contacts.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
+        final contact = contacts[index];
         return ListTile(
-          leading: const CircleAvatar(child: Icon(Icons.person)),
-          title: Text('Contact $index'),
+          leading: CircleAvatar(
+            key: Key('contact-avatar-${contact.id}'),
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            foregroundImage: contact.avatarUrl == null
+                ? null
+                : NetworkImage(
+                    '${Constants.baseUrl}${contact.avatarUrl}',
+                    headers: ApiService.instance.authorizationHeaders,
+                  ),
+            onForegroundImageError: contact.avatarUrl == null
+                ? null
+                : (_, _) {},
+            child: const Icon(Icons.person),
+          ),
+          title: Text(contact.login),
         );
       },
     );

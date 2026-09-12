@@ -48,6 +48,33 @@ scope before making changes. If a worker discovers that a change outside its
 assigned scope is necessary, it must return that work to the orchestrator
 instead of editing the other scope.
 
+## Model routing policy
+
+Use model routing when the orchestration environment supports explicit model
+selection. `AGENTS.md` does not change the model of the already-running root
+task; the root task must be started with the intended orchestrator model.
+
+- Use `gpt-5.6-sol` for the root orchestrator, cross-application contracts,
+  architecture decisions, integration review, and resolution of disagreements
+  between workers.
+- Use `gpt-5.6-terra` for Mobile and Backend implementation workers. Give each
+  worker an explicit write scope, the approved contract, acceptance criteria,
+  and required validation commands.
+- Use `gpt-5.6-luna` for bounded exploration, codebase searches, simple focused
+  tests, and mechanical edits when that model is available to the subagent
+  launcher. If Luna is unavailable, use `gpt-5.6-terra` with low reasoning
+  effort for those tasks.
+- Do not delegate a task merely to use a cheaper model. Delegate only when the
+  work is independently scoped and parallel execution or isolation is useful.
+- If a Terra worker encounters an architectural decision, a contract change,
+  conflicting ownership, or a required change outside its assigned scope, it
+  must stop that part of the work and report the concrete findings and options
+  to the Sol orchestrator. The orchestrator resolves the issue before the
+  worker continues.
+- When explicit model overrides require a limited-context subagent fork, pass
+  the relevant contract, paths, constraints, and current findings directly in
+  the worker task instead of relying on inherited conversation context.
+
 ### Mobile worker
 
 Write scope: `apps/mobile/**` only.

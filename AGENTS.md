@@ -9,9 +9,10 @@ files may override them for their subdirectories.
 
 Chatly is a small monorepo:
 
-- `apps/backend`: NestJS 11 API written in TypeScript, using Drizzle ORM and PostgreSQL.
+- `apps/backend`: NestJS 11 workspace containing the HTTP API, RabbitMQ mail consumer,
+  and shared event contracts. The API uses Drizzle ORM and PostgreSQL.
 - `apps/mobile`: Flutter client written in Dart. Product code lives under `lib/`.
-- `infra/docker-compose.yml`: local PostgreSQL, Redis, and MinIO services.
+- `infra/docker-compose.yml`: local PostgreSQL, Redis, RabbitMQ, and MinIO services.
 
 Run app-specific commands from the corresponding app directory. There is no
 root package manager or root-level test command.
@@ -122,13 +123,14 @@ docker compose -f infra/docker-compose.yml down
 ```
 
 Do not run `docker compose ... down -v` unless the user explicitly asks to
-delete local database and object-storage data.
+delete local database, broker, and object-storage data.
 
 Backend, from `apps/backend`:
 
 ```bash
 npm ci
-npm run start:dev
+npm run start:dev # API
+npm run start:mail-service:dev # RabbitMQ consumer
 npm run db:check
 npm run build
 npm run lint
@@ -152,10 +154,16 @@ change, run the checks relevant to every app touched. Note that the backend
 
 ## Change guidelines
 
-- Keep backend features inside their existing NestJS feature modules and
-  follow the controller/service separation already used in `src/`. Database
-  tables are defined centrally in `src/database/schema.ts` and changed through
-  versioned migrations under `apps/backend/drizzle`.
+- Keep HTTP API features under `apps/backend/apps/api/src` and RabbitMQ mail
+  consumer features under `apps/backend/apps/mail-service/src`. Shared event
+  contracts belong in `apps/backend/libs/contracts/src`. Preserve the existing
+  controller/service separation.
+- Database tables are defined centrally in
+  `apps/backend/apps/api/src/database/schema.ts` and changed through versioned
+  migrations under `apps/backend/drizzle`.
+- When changing shared events, verify both the producer contract and every
+  consumer. For mail events, preserve manual acknowledgements and the DLQ
+  behavior unless a new delivery policy is explicitly approved.
 - Keep Flutter application changes under `apps/mobile/lib` unless the task is
   explicitly platform-specific. Treat Flutter-generated platform scaffolding
   as generated code.
@@ -174,5 +182,5 @@ change, run the checks relevant to every app touched. Note that the backend
 The backend reads local configuration from `apps/backend/.env`. Use the example
 values documented in the root `README.md`, but do not copy secrets into source,
 logs, tests, or responses. Local infrastructure defaults are PostgreSQL on
-`5432`, Redis on `6379`, and MinIO on `9000`/`9001`; the backend defaults to
-`http://localhost:3000`.
+`5432`, Redis on `6379`, RabbitMQ on `5672` with its management UI on `15672`,
+and MinIO on `9000`/`9001`; the API defaults to `http://localhost:3000`.

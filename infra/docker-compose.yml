@@ -23,6 +23,26 @@ services:
     networks:
       - chatly_network
 
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: chatly_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: chatly
+      RABBITMQ_DEFAULT_PASS: chatly
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - chatly_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chatly_network
+
   minio:
     image: quay.io/minio/minio
     container_name: chatly_minio
@@ -42,6 +62,7 @@ services:
 volumes:
   chatly_postgres_data:
   chatly_minio_data:
+  chatly_rabbitmq_data:
 
 networks:
   chatly_network:

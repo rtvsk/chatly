@@ -13,7 +13,7 @@ const required = (name: string) => {
 
 export default defineConfig({
   dialect: 'postgresql',
-  schema: './src/database/schema.ts',
+  schema: './apps/api/src/database/schema.ts',
   out: './drizzle',
   dbCredentials: {
     host: required('DATABASE_HOST'),

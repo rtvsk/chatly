@@ -6,18 +6,25 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "build": "nest build --all",
+    "build:api": "nest build api",
+    "build:mail-service": "nest build mail-service",
+    "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
+    "start": "nest start api",
+    "start:dev": "nest start api --watch",
+    "start:debug": "nest start api --debug --watch",
+    "start:prod": "node dist/apps/api/main.js",
+    "start:api": "nest start api",
+    "start:api:dev": "nest start api --watch",
+    "start:mail-service": "nest start mail-service",
+    "start:mail-service:dev": "nest start mail-service --watch",
+    "start:mail-service:prod": "node dist/apps/mail-service/main.js",
+    "lint": "eslint \"{apps,libs}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "jest --config ./apps/api/test/jest-e2e.json",
     "db:pull": "drizzle-kit pull --init",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -29,8 +36,11 @@
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
     "@nestjs/jwt": "^11.0.2",
+    "@nestjs/microservices": "11.1.19",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "amqp-connection-manager": "^5.0.0",
+    "amqplib": "^2.0.1",
     "bcrypt": "^6.0.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
@@ -47,6 +57,7 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@types/amqplib": "^0.10.8",
     "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
@@ -76,7 +87,7 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
+    "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
@@ -84,7 +95,11 @@
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
-    "coverageDirectory": "../coverage",
+    "moduleNameMapper": {
+      "^@app/contracts$": "<rootDir>/libs/contracts/src",
+      "^@app/contracts/(.*)$": "<rootDir>/libs/contracts/src/$1"
+    },
+    "coverageDirectory": "coverage",
     "testEnvironment": "node"
   }
 }

@@ -54,9 +54,20 @@ interface MailSendEvent {
 ```
 
 The consumer declares both the durable main queue and `MAIL_DLQ` (default
-`mail.events.dlq`). Messages are manually acknowledged after successful
-processing. Invalid messages and processing failures are rejected without
-requeue and routed to the DLQ.
+`mail.events.dlq`). Messages are manually acknowledged after successful SMTP
+delivery. Invalid messages, unsupported templates, and SMTP failures are
+rejected without requeue and routed to the DLQ.
 
-`MailService.process()` currently logs safe event metadata and is intentionally
-a template: no SMTP or external email provider is configured.
+The currently supported template is `google-link`. It sends a Google link to
+the event's `to` address and uses the optional event subject or `Google` by
+default.
+
+Configure Gmail with environment variables; never commit their values:
+
+```bash
+GMAIL_USER=sender@gmail.com
+GMAIL_APP_PASSWORD=replace-with-a-google-app-password
+```
+
+The Gmail account must have 2-Step Verification enabled, and the password must
+be a dedicated Google App Password rather than the account password.

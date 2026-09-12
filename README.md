@@ -135,6 +135,8 @@ REDIS_PORT=6379
 RABBITMQ_URL=amqp://chatly:chatly@localhost:5672
 MAIL_QUEUE=mail.events
 MAIL_DLQ=mail.events.dlq
+GMAIL_USER=sender@gmail.com
+GMAIL_APP_PASSWORD=replace-with-a-google-app-password
 S3_ENDPOINT=http://localhost:9000
 S3_ACCESS_KEY=minioadmin
 S3_SECRET_KEY=minioadmin
@@ -173,9 +175,15 @@ baseline that database with `drizzle-kit pull --init` first.
 }
 ```
 
-Successful events are acknowledged manually. Invalid events and processing
-errors are rejected without requeue and routed to `MAIL_DLQ`. The current
-`MailService` is a processing template only and does not send real email.
+The supported `google-link` template sends a Google link to the address in
+`to`, using `subject` when supplied and `Google` otherwise. Gmail SMTP uses
+TLS on port `465` and requires `GMAIL_USER` plus a Google App Password in
+`GMAIL_APP_PASSWORD`.
+
+Successful events are acknowledged only after Gmail accepts the message.
+Invalid events, unsupported templates, and SMTP errors are rejected without
+requeue and routed to `MAIL_DLQ`. Never commit Gmail credentials or paste them
+into source files.
 
 ---
 

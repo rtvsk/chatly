@@ -191,6 +191,9 @@ change, run the checks relevant to every app touched. Note that the backend
 - When changing shared events, verify both the producer contract and every
   consumer. For mail events, preserve manual acknowledgements and the DLQ
   behavior unless a new delivery policy is explicitly approved.
+- Keep SMTP credentials in ignored environment files or secret storage. Never
+  add Gmail users, App Passwords, SMTP credentials, or full mail payloads to
+  source, tests, logs, documentation examples, or agent responses.
 - Keep Flutter application changes under `apps/mobile/lib` unless the task is
   explicitly platform-specific. Treat Flutter-generated platform scaffolding
   as generated code.
@@ -211,3 +214,5 @@ values documented in the root `README.md`, but do not copy secrets into source,
 logs, tests, or responses. Local infrastructure defaults are PostgreSQL on
 `5432`, Redis on `6379`, RabbitMQ on `5672` with its management UI on `15672`,
 and MinIO on `9000`/`9001`; the API defaults to `http://localhost:3000`.
+The mail service additionally requires `GMAIL_USER` and
+`GMAIL_APP_PASSWORD` to send through Gmail SMTP.

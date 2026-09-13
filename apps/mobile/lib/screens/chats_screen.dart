@@ -5,14 +5,17 @@ import 'package:flutter/material.dart';
 
 import '../constants.dart';
 import '../models/avatar.dart';
+import '../models/chat.dart';
 import '../models/contact.dart';
 import '../services/avatar_service.dart';
+import '../services/chats_service.dart';
 import '../services/contacts_service.dart';
 import '../services/friends_service.dart';
 import '../storage/token_storage.dart';
 import '../widgets/chatly_bottom_navigation_bar.dart';
 import './profile_screen.dart';
 import './signup_screen.dart';
+import './chat_screen.dart';
 import './user_profile_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
@@ -24,6 +27,7 @@ class ChatsScreen extends StatefulWidget {
 class _ChatsScreenState extends State<ChatsScreen> {
   final FriendsService _friendsService = const FriendsService();
   final GlobalKey<_ContactsTabState> _contactsKey = GlobalKey();
+  final GlobalKey<_ChatsTabState> _chatsKey = GlobalKey();
   Timer? _notificationsTimer;
   String? login;
   Avatar? currentAvatar;
@@ -52,7 +56,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
     if (!mounted) return;
 
-    await ApiService.instance.get('/chats');
     final selectedAvatar = await _getCurrentAvatar();
 
     setState(() {
@@ -118,7 +121,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
     final pages = [
       ContactsTab(key: _contactsKey),
-      const ChatsTab(),
+      ChatsTab(key: _chatsKey),
       ProfileTab(
         login: userLogin,
         onAvatarsChanged: _refreshCurrentAvatar,
@@ -207,6 +210,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
             unawaited(
               _contactsKey.currentState?._loadContacts() ??
                   Future<void>.value(),
+            );
+          }
+          if (index == 1) {
+            unawaited(
+              _chatsKey.currentState?._loadChats() ?? Future<void>.value(),
             );
           }
           if (index == 2) unawaited(_refreshNotifications());
@@ -440,19 +448,100 @@ class _ContactsTabState extends State<ContactsTab> {
   }
 }
 
-class ChatsTab extends StatelessWidget {
-  const ChatsTab({super.key});
+class ChatsTab extends StatefulWidget {
+  const ChatsTab({super.key, this.chatsService = const ChatsService()});
+
+  final ChatsService chatsService;
+
+  @override
+  State<ChatsTab> createState() => _ChatsTabState();
+}
+
+class _ChatsTabState extends State<ChatsTab> {
+  List<ChatSummary> _chats = const [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadChats();
+  }
+
+  Future<void> _loadChats() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
+
+    try {
+      final chats = await widget.chatsService.getChats();
+      if (!mounted) return;
+      setState(() {
+        _chats = chats;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = 'Could not load chats';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_error!),
+            const SizedBox(height: 8),
+            FilledButton(onPressed: _loadChats, child: const Text('Retry')),
+          ],
+        ),
+      );
+    }
+
+    if (_chats.isEmpty) return const Center(child: Text('No chats yet'));
+
+    return ListView.separated(
       padding: EdgeInsets.zero,
-      itemCount: 30,
+      itemCount: _chats.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
+        final chat = _chats[index];
+        final peer = chat.peer;
         return ListTile(
-          leading: const CircleAvatar(child: Icon(Icons.chat)),
-          title: Text('Chat $index'),
-          subtitle: const Text('Last message...'),
+          leading: CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            foregroundImage: peer.avatarUrl == null
+                ? null
+                : NetworkImage(
+                    '${Constants.baseUrl}${peer.avatarUrl}',
+                    headers: ApiService.instance.authorizationHeaders,
+                  ),
+            onForegroundImageError: peer.avatarUrl == null ? null : (_, _) {},
+            child: const Icon(Icons.person),
+          ),
+          title: Text(peer.login),
+          subtitle: Text(
+            chat.lastMessage?.text ?? 'No messages yet',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          onTap: () async {
+            await Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
+            );
+            if (mounted) await _loadChats();
+          },
         );
       },
     );

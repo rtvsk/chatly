@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
 
 import '../constants.dart';
+import '../models/chat.dart';
 import '../models/contact.dart';
 import '../models/friend_request.dart';
 import '../services/api_service.dart';
+import '../services/chats_service.dart';
 import '../services/friends_service.dart';
+import 'chat_screen.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({
     required this.user,
     this.friendsService = const FriendsService(),
+    this.chatsService = const ChatsService(),
     super.key,
   });
 
   final Contact user;
   final FriendsService friendsService;
+  final ChatsService chatsService;
 
   @override
   State<UserProfileScreen> createState() => _UserProfileScreenState();
@@ -22,6 +27,7 @@ class UserProfileScreen extends StatefulWidget {
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
   FriendshipState? _friendshipState;
+  ChatSummary? _directChat;
   bool _isSending = false;
   String? _error;
 
@@ -41,8 +47,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       final state = await widget.friendsService.getFriendshipStatus(
         widget.user.id,
       );
+      ChatSummary? directChat;
+      if (state == FriendshipState.friends) {
+        try {
+          directChat = await widget.chatsService.getDirectChat(widget.user.id);
+        } catch (_) {
+          // The friend action stays available if checking for a chat fails.
+        }
+      }
       if (!mounted) return;
-      setState(() => _friendshipState = state);
+      setState(() {
+        _friendshipState = state;
+        _directChat = directChat;
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'Could not load friendship status');
@@ -113,6 +130,27 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
+  Future<void> _openChat() async {
+    setState(() => _isSending = true);
+    try {
+      final chat =
+          _directChat ??
+          await widget.chatsService.createDirectChat(widget.user.id);
+      if (!mounted) return;
+      setState(() => _directChat = chat);
+      await Navigator.of(
+        context,
+      ).push<void>(MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open chat')));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -171,15 +209,33 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         icon: const Icon(Icons.person_add_alt_1),
         label: Text(_isSending ? 'Sending...' : 'Add friend'),
       ),
-      FriendshipState.friends => FilledButton.icon(
-        key: const Key('remove-friend-button'),
-        style: FilledButton.styleFrom(
-          backgroundColor: Theme.of(context).colorScheme.error,
-          foregroundColor: Theme.of(context).colorScheme.onError,
-        ),
-        onPressed: _isSending ? null : _removeFriend,
-        icon: const Icon(Icons.person_remove),
-        label: Text(_isSending ? 'Removing...' : 'Remove friend'),
+      FriendshipState.friends => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FilledButton.icon(
+            key: const Key('open-chat-button'),
+            onPressed: _isSending ? null : _openChat,
+            icon: const Icon(Icons.chat),
+            label: Text(
+              _isSending
+                  ? 'Opening chat...'
+                  : _directChat == null
+                  ? 'Start chat'
+                  : 'Go to chat',
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            key: const Key('remove-friend-button'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: _isSending ? null : _removeFriend,
+            icon: const Icon(Icons.person_remove),
+            label: Text(_isSending ? 'Removing...' : 'Remove friend'),
+          ),
+        ],
       ),
       FriendshipState.outgoingPending => const Chip(
         avatar: Icon(Icons.schedule),

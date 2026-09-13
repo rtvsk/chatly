@@ -1,6 +1,8 @@
 import 'package:chatly/models/contact.dart';
 import 'package:chatly/models/friend_request.dart';
+import 'package:chatly/models/chat.dart';
 import 'package:chatly/screens/user_profile_screen.dart';
+import 'package:chatly/services/chats_service.dart';
 import 'package:chatly/services/friends_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,6 +35,11 @@ class FakeFriendsService extends FriendsService {
   }
 }
 
+class FakeChatsService extends ChatsService {
+  @override
+  Future<ChatSummary?> getDirectChat(String userId) async => null;
+}
+
 Widget _profileApp(FriendsService service, {ValueChanged<bool?>? onResult}) {
   return MaterialApp(
     home: Builder(
@@ -45,6 +52,7 @@ Widget _profileApp(FriendsService service, {ValueChanged<bool?>? onResult}) {
                   builder: (_) => UserProfileScreen(
                     user: const Contact(id: 'user-id', login: 'dima'),
                     friendsService: service,
+                    chatsService: FakeChatsService(),
                   ),
                 ),
               );
@@ -70,6 +78,7 @@ void main() {
             avatarUrl: '/avatars/avatar-id/file',
           ),
           friendsService: service,
+          chatsService: FakeChatsService(),
         ),
       ),
     );
@@ -110,6 +119,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(service.removedUserId, isNull);
+    expect(find.byKey(const Key('remove-friend-button')), findsOneWidget);
+  });
+
+  testWidgets('accepted friends can start a chat without losing removal', (
+    tester,
+  ) async {
+    final service = FakeFriendsService(
+      friendshipState: FriendshipState.friends,
+    );
+    await tester.pumpWidget(_profileApp(service));
+
+    await tester.tap(find.text('Open profile'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Start chat'), findsOneWidget);
     expect(find.byKey(const Key('remove-friend-button')), findsOneWidget);
   });
 

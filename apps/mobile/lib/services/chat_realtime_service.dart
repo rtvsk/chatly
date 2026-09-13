@@ -14,7 +14,16 @@ abstract interface class ChatRealtime {
   /// Emits after each successful Socket.IO connection, including reconnects.
   Stream<void> get connected;
 
+  /// The most recently received immutable set of online user IDs.
+  Set<String> get onlineUserIds;
+
+  /// Broadcasts each change to the immutable set of online user IDs.
+  Stream<Set<String>> get onlineUserIdsChanges;
+
   Future<void> connect();
+
+  /// Requests a fresh presence snapshot when the socket is connected.
+  void refreshPresence();
 
   void disconnect();
 }
@@ -37,8 +46,11 @@ class ChatRealtimeService implements ChatRealtime {
   final StreamController<ChatMessage> _messages =
       StreamController<ChatMessage>.broadcast();
   final StreamController<void> _connected = StreamController<void>.broadcast();
+  final StreamController<Set<String>> _onlineUserIdsChanges =
+      StreamController<Set<String>>.broadcast();
 
   io.Socket? _socket;
+  Set<String> _onlineUserIds = const {};
   bool _explicitlyDisconnected = false;
   bool _refreshInProgress = false;
   bool _refreshAttempted = false;
@@ -49,6 +61,12 @@ class ChatRealtimeService implements ChatRealtime {
 
   @override
   Stream<void> get connected => _connected.stream;
+
+  @override
+  Set<String> get onlineUserIds => _onlineUserIds;
+
+  @override
+  Stream<Set<String>> get onlineUserIdsChanges => _onlineUserIdsChanges.stream;
 
   @override
   Future<void> connect() async {
@@ -81,6 +99,7 @@ class ChatRealtimeService implements ChatRealtime {
       if (!_isCurrent(generation, socket)) return;
       _refreshAttempted = false;
       _connected.add(null);
+      refreshPresence();
     });
     socket.on('message.created', (payload) {
       if (!_isCurrent(generation, socket) || payload is! Map) return;
@@ -89,6 +108,35 @@ class ChatRealtimeService implements ChatRealtime {
       } catch (_) {
         // Malformed realtime payloads must not terminate the authenticated UI.
       }
+    });
+    socket.on('presence.snapshot', (payload) {
+      if (!_isCurrent(generation, socket) || payload is! Map) return;
+
+      final onlineUserIds = payload['onlineUserIds'];
+      if (onlineUserIds is! List || onlineUserIds.any((id) => id is! String)) {
+        return;
+      }
+
+      _setOnlineUserIds(onlineUserIds.cast<String>());
+    });
+    socket.on('presence.changed', (payload) {
+      if (!_isCurrent(generation, socket) || payload is! Map) return;
+
+      final userId = payload['userId'];
+      final isOnline = payload['isOnline'];
+      if (userId is! String || isOnline is! bool) return;
+
+      final updatedOnlineUserIds = Set<String>.from(_onlineUserIds);
+      if (isOnline) {
+        updatedOnlineUserIds.add(userId);
+      } else {
+        updatedOnlineUserIds.remove(userId);
+      }
+      _setOnlineUserIds(updatedOnlineUserIds);
+    });
+    socket.onDisconnect((_) {
+      if (!_isCurrent(generation, socket)) return;
+      _setOnlineUserIds(const {}, forceEmit: true);
     });
     socket.onConnectError(
       (error) => unawaited(_handleConnectError(error, generation, socket)),
@@ -100,6 +148,25 @@ class ChatRealtimeService implements ChatRealtime {
     return !_explicitlyDisconnected &&
         generation == _generation &&
         identical(_socket, socket);
+  }
+
+  @override
+  void refreshPresence() {
+    final socket = _socket;
+    if (socket == null || !socket.connected) return;
+    socket.emit('presence.get');
+  }
+
+  void _setOnlineUserIds(Iterable<String> userIds, {bool forceEmit = false}) {
+    final updatedOnlineUserIds = Set<String>.unmodifiable(userIds);
+    if (!forceEmit &&
+        _onlineUserIds.length == updatedOnlineUserIds.length &&
+        _onlineUserIds.containsAll(updatedOnlineUserIds)) {
+      return;
+    }
+
+    _onlineUserIds = updatedOnlineUserIds;
+    _onlineUserIdsChanges.add(_onlineUserIds);
   }
 
   Future<void> _handleConnectError(
@@ -156,6 +223,7 @@ class ChatRealtimeService implements ChatRealtime {
   void disconnect() {
     _explicitlyDisconnected = true;
     ++_generation;
+    _setOnlineUserIds(const {}, forceEmit: true);
     _closeSocket();
   }
 

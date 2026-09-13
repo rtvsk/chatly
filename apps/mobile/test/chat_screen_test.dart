@@ -148,6 +148,37 @@ void main() {
     expect(service.afterCalls.last, 'realtime-id');
   });
 
+  testWidgets('shows and clears the peer online status from presence updates', (
+    tester,
+  ) async {
+    final realtime = FakeChatRealtime();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(
+          chat: _chat,
+          chatsService: FakeChatsService(),
+          realtimeService: realtime,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Online'), findsNothing);
+    expect(find.byKey(const Key('chat-peer-online-indicator')), findsNothing);
+    expect(realtime.refreshPresenceCalls, 1);
+
+    realtime.applyPresenceSnapshot(const ['peer-id']);
+    await tester.pumpAndSettle();
+    expect(find.text('Online'), findsOneWidget);
+    expect(find.byKey(const Key('chat-peer-online-indicator')), findsOneWidget);
+
+    realtime.applyPresenceChanged(userId: 'peer-id', isOnline: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Online'), findsNothing);
+    expect(find.byKey(const Key('chat-peer-online-indicator')), findsNothing);
+  });
+
   testWidgets('cancels realtime subscriptions when disposed', (tester) async {
     final realtime = FakeChatRealtime();
 
@@ -166,5 +197,6 @@ void main() {
 
     expect(realtime.messageCancellations, 1);
     expect(realtime.connectedCancellations, 1);
+    expect(realtime.onlineUserIdsCancellations, 1);
   });
 }

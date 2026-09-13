@@ -6,6 +6,8 @@ import 'package:chatly/services/friends_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'chat_realtime_test_support.dart';
+
 class FakeContactsService extends ContactsService {
   FakeContactsService({this.friends = const [], this.searchResults = const {}});
 
@@ -47,12 +49,17 @@ class FakeFriendsService extends FriendsService {
   }
 }
 
-Widget _appWith(FakeContactsService service, {FriendsService? friendsService}) {
+Widget _appWith(
+  FakeContactsService service, {
+  FriendsService? friendsService,
+  FakeChatRealtime? realtimeService,
+}) {
   return MaterialApp(
     home: Scaffold(
       body: ContactsTab(
         contactsService: service,
         friendsService: friendsService ?? FakeFriendsService(),
+        realtimeService: realtimeService,
       ),
     ),
   );
@@ -82,6 +89,42 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No contacts'), findsOneWidget);
+  });
+
+  testWidgets('shows presence beside online contacts and refreshes it', (
+    tester,
+  ) async {
+    final realtime = FakeChatRealtime(onlineUserIds: const ['one']);
+    final service = FakeContactsService(
+      friends: const [
+        Contact(id: 'one', login: 'alice'),
+        Contact(id: 'two', login: 'bob'),
+      ],
+    );
+
+    await tester.pumpWidget(_appWith(service, realtimeService: realtime));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('contact-online-indicator-one')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('contact-online-indicator-two')), findsNothing);
+    expect(realtime.refreshPresenceCalls, 1);
+
+    realtime.applyPresenceChanged(userId: 'one', isOnline: false);
+    realtime.applyPresenceChanged(userId: 'two', isOnline: true);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('contact-online-indicator-one')), findsNothing);
+    expect(
+      find.byKey(const Key('contact-online-indicator-two')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(realtime.onlineUserIdsCancellations, 1);
   });
 
   testWidgets('searches after three characters and a debounce delay', (

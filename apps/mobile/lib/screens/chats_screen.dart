@@ -20,15 +20,28 @@ import './chat_screen.dart';
 import './user_profile_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
-  const ChatsScreen({super.key, this.realtimeService});
+  const ChatsScreen({
+    super.key,
+    this.realtimeService,
+    this.contactsService = const ContactsService(),
+    this.chatsService = const ChatsService(),
+    this.friendsService = const FriendsService(),
+    this.avatarService = const AvatarService(),
+    this.userLoginLoader,
+  });
 
   final ChatRealtime? realtimeService;
+  final ContactsService contactsService;
+  final ChatsService chatsService;
+  final FriendsService friendsService;
+  final AvatarService avatarService;
+  final Future<String?> Function()? userLoginLoader;
   @override
   State<ChatsScreen> createState() => _ChatsScreenState();
 }
 
-class _ChatsScreenState extends State<ChatsScreen> {
-  final FriendsService _friendsService = const FriendsService();
+class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
+  late final FriendsService _friendsService;
   final GlobalKey<_ContactsTabState> _contactsKey = GlobalKey();
   final GlobalKey<_ChatsTabState> _chatsKey = GlobalKey();
   Timer? _notificationsTimer;
@@ -41,7 +54,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _realtimeService = widget.realtimeService ?? ChatRealtimeService.instance;
+    _friendsService = widget.friendsService;
     unawaited(_realtimeService.connect());
     _loadLogin();
     _refreshNotifications();
@@ -53,13 +68,30 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _notificationsTimer?.cancel();
     _realtimeService.disconnect();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        unawaited(_realtimeService.connect());
+        return;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        _realtimeService.disconnect();
+    }
+  }
+
   Future<void> _loadLogin() async {
-    final savedLogin = await TokenStorage.instance.getUserLogin();
+    final savedLogin =
+        await (widget.userLoginLoader ?? TokenStorage.instance.getUserLogin)
+            .call();
 
     if (!mounted) return;
 
@@ -73,7 +105,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   Future<Avatar?> _getCurrentAvatar() async {
     try {
-      final avatars = await const AvatarService().getAvatars();
+      final avatars = await widget.avatarService.getAvatars();
 
       for (final avatar in avatars) {
         if (avatar.isSelected) return avatar;
@@ -128,10 +160,20 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final userLogin = login ?? 'Loading...';
 
     final pages = [
-      ContactsTab(key: _contactsKey, realtimeService: _realtimeService),
-      ChatsTab(key: _chatsKey, realtimeService: _realtimeService),
+      ContactsTab(
+        key: _contactsKey,
+        contactsService: widget.contactsService,
+        friendsService: _friendsService,
+        realtimeService: _realtimeService,
+      ),
+      ChatsTab(
+        key: _chatsKey,
+        chatsService: widget.chatsService,
+        realtimeService: _realtimeService,
+      ),
       ProfileTab(
         login: userLogin,
+        friendsService: _friendsService,
         onAvatarsChanged: _refreshCurrentAvatar,
         onNotificationsChanged: _refreshFriendships,
       ),
@@ -254,6 +296,8 @@ class _ContactsTabState extends State<ContactsTab> {
   final _searchController = TextEditingController();
   Timer? _searchDebounce;
   late final ChatRealtime _realtimeService;
+  StreamSubscription<Set<String>>? _onlineUserIdsSubscription;
+  late Set<String> _onlineUserIds;
   List<Contact> _contacts = const [];
   List<Contact> _searchResults = const [];
   bool _isLoadingContacts = true;
@@ -267,6 +311,12 @@ class _ContactsTabState extends State<ContactsTab> {
   void initState() {
     super.initState();
     _realtimeService = widget.realtimeService ?? ChatRealtimeService.instance;
+    _onlineUserIds = _realtimeService.onlineUserIds;
+    _onlineUserIdsSubscription = _realtimeService.onlineUserIdsChanges.listen((
+      onlineUserIds,
+    ) {
+      if (mounted) setState(() => _onlineUserIds = onlineUserIds);
+    });
     _loadContacts();
   }
 
@@ -284,6 +334,7 @@ class _ContactsTabState extends State<ContactsTab> {
         _contacts = contacts;
         _isLoadingContacts = false;
       });
+      _realtimeService.refreshPresence();
     } catch (_) {
       if (!mounted) return;
 
@@ -345,6 +396,7 @@ class _ContactsTabState extends State<ContactsTab> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _onlineUserIdsSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -425,6 +477,7 @@ class _ContactsTabState extends State<ContactsTab> {
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final contact = contacts[index];
+        final isOnline = _onlineUserIds.contains(contact.id);
         return ListTile(
           leading: CircleAvatar(
             key: Key('contact-avatar-${contact.id}'),
@@ -440,7 +493,26 @@ class _ContactsTabState extends State<ContactsTab> {
                 : (_, _) {},
             child: const Icon(Icons.person),
           ),
-          title: Text(contact.login),
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(contact.login, overflow: TextOverflow.ellipsis),
+              ),
+              if (isOnline) ...[
+                const SizedBox(width: 6),
+                Container(
+                  key: Key('contact-online-indicator-${contact.id}'),
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ],
+          ),
           onTap: () async {
             final wasRemoved = await Navigator.of(context).push<bool>(
               MaterialPageRoute(

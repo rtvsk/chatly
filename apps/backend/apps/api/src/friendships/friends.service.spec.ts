@@ -66,6 +66,24 @@ describe('FriendsService', () => {
     },
   );
 
+  it('returns the opposite user ID for accepted friendships in either direction', async () => {
+    const builder = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([
+        { requesterId: 'current-user', receiverId: 'friend-one' },
+        { requesterId: 'friend-two', receiverId: 'current-user' },
+      ]),
+    };
+    const service = new FriendsService({
+      db: { select: jest.fn().mockReturnValue(builder) },
+    } as unknown as DatabaseService);
+
+    await expect(service.getAcceptedFriendIds('current-user')).resolves.toEqual(
+      ['friend-one', 'friend-two'],
+    );
+    expect(builder.where).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a pending request addressed to the current user', async () => {
     const friendship = { id: 'friendship-id', status: 'rejected' };
     const builder = {

@@ -1,13 +1,17 @@
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import {
   OnGatewayConnection,
+  OnGatewayDisconnect,
   OnGatewayInit,
+  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { verify } from 'jsonwebtoken';
 import { Server, Socket } from 'socket.io';
 
+import { FriendsService } from '../friendships/friends.service';
 import type { ChatMessage } from './chats.service';
 
 type AccessTokenPayload = {
@@ -22,17 +26,35 @@ type MessageCreatedEvent = Omit<ChatMessage, 'createdAt' | 'updatedAt'> & {
 
 export const userRoom = (userId: string): string => `user:${userId}`;
 
+type PresenceSnapshotEvent = {
+  onlineUserIds: string[];
+};
+
+type PresenceChangedEvent = {
+  userId: string;
+  isOnline: boolean;
+};
+
 @WebSocketGateway({
   namespace: '/chats',
   transports: ['websocket'],
 })
-export class ChatsGateway implements OnGatewayInit, OnGatewayConnection {
+export class ChatsGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   private server!: Server;
 
-  constructor(private readonly configService: ConfigService) {}
+  private readonly logger = new Logger(ChatsGateway.name);
+
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly friendsService: FriendsService,
+  ) {}
 
   afterInit(server: Server): void {
+    this.server = server;
+
     server.use((socket, next) => {
       const token = socket.handshake.auth?.token;
       if (typeof token !== 'string') {
@@ -59,14 +81,46 @@ export class ChatsGateway implements OnGatewayInit, OnGatewayConnection {
     });
   }
 
-  handleConnection(socket: Socket): void {
+  async handleConnection(socket: Socket): Promise<void> {
     const user = socket.data.user as AccessTokenPayload | undefined;
     if (!user) {
       socket.disconnect(true);
       return;
     }
 
-    void socket.join(userRoom(user.sub));
+    await socket.join(userRoom(user.sub));
+    await this.sendPresenceSnapshot(socket, user.sub);
+    await this.broadcastPresenceChange(user.sub, true);
+  }
+
+  async handleDisconnect(socket: Socket): Promise<void> {
+    const user = socket.data.user as AccessTokenPayload | undefined;
+    if (!user) {
+      return;
+    }
+
+    try {
+      const remainingSockets = await this.server
+        .in(userRoom(user.sub))
+        .fetchSockets();
+
+      if (remainingSockets.length === 0) {
+        await this.broadcastPresenceChange(user.sub, false);
+      }
+    } catch {
+      this.logger.warn('Unable to determine presence after disconnect');
+    }
+  }
+
+  @SubscribeMessage('presence.get')
+  async handlePresenceGet(socket: Socket): Promise<void> {
+    const user = socket.data.user as AccessTokenPayload | undefined;
+    if (!user) {
+      socket.disconnect(true);
+      return;
+    }
+
+    await this.sendPresenceSnapshot(socket, user.sub);
   }
 
   publishMessageCreated(
@@ -82,5 +136,51 @@ export class ChatsGateway implements OnGatewayInit, OnGatewayConnection {
     for (const participantId of new Set(participantIds)) {
       this.server.to(userRoom(participantId)).emit('message.created', payload);
     }
+  }
+
+  private async sendPresenceSnapshot(
+    socket: Socket,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const friendIds = await this.friendsService.getAcceptedFriendIds(userId);
+      const onlineUserIds = await this.getOnlineUserIds(friendIds);
+      const payload: PresenceSnapshotEvent = { onlineUserIds };
+
+      socket.emit('presence.snapshot', payload);
+    } catch {
+      this.logger.warn('Unable to load presence snapshot');
+    }
+  }
+
+  private async broadcastPresenceChange(
+    userId: string,
+    isOnline: boolean,
+  ): Promise<void> {
+    try {
+      const friendIds = await this.friendsService.getAcceptedFriendIds(userId);
+      const payload: PresenceChangedEvent = { userId, isOnline };
+
+      for (const friendId of friendIds) {
+        this.server.to(userRoom(friendId)).emit('presence.changed', payload);
+      }
+    } catch {
+      this.logger.warn('Unable to broadcast presence change');
+    }
+  }
+
+  private async getOnlineUserIds(
+    userIds: readonly string[],
+  ): Promise<string[]> {
+    const onlineUserIds: string[] = [];
+
+    for (const userId of new Set(userIds)) {
+      const sockets = await this.server.in(userRoom(userId)).fetchSockets();
+      if (sockets.length > 0) {
+        onlineUserIds.push(userId);
+      }
+    }
+
+    return onlineUserIds;
   }
 }

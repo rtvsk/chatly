@@ -316,4 +316,28 @@ export class FriendsService {
       };
     });
   }
+
+  async getAcceptedFriendIds(userId: string): Promise<string[]> {
+    const friendshipRows = await this.database.db
+      .select({
+        requesterId: friendships.requesterId,
+        receiverId: friendships.receiverId,
+      })
+      .from(friendships)
+      .where(
+        and(
+          eq(friendships.status, FriendshipStatus.ACCEPTED),
+          or(
+            eq(friendships.requesterId, userId),
+            eq(friendships.receiverId, userId),
+          ),
+        ),
+      );
+
+    return friendshipRows.map((friendship) =>
+      friendship.requesterId === userId
+        ? friendship.receiverId
+        : friendship.requesterId,
+    );
+  }
 }

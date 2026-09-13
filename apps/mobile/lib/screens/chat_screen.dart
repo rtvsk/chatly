@@ -32,6 +32,8 @@ class _ChatScreenState extends State<ChatScreen> {
   late final ChatRealtime _realtimeService;
   StreamSubscription<ChatMessage>? _messagesSubscription;
   StreamSubscription<void>? _connectedSubscription;
+  StreamSubscription<Set<String>>? _onlineUserIdsSubscription;
+  late Set<String> _onlineUserIds;
   bool _isLoading = true;
   bool _isFetching = false;
   bool _catchUpRequested = false;
@@ -48,6 +50,13 @@ class _ChatScreenState extends State<ChatScreen> {
     _connectedSubscription = _realtimeService.connected.listen(
       (_) => unawaited(_fetchMessages()),
     );
+    _onlineUserIds = _realtimeService.onlineUserIds;
+    _onlineUserIdsSubscription = _realtimeService.onlineUserIdsChanges.listen((
+      onlineUserIds,
+    ) {
+      if (mounted) setState(() => _onlineUserIds = onlineUserIds);
+    });
+    _realtimeService.refreshPresence();
     unawaited(_fetchMessages(initial: true));
   }
 
@@ -55,6 +64,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _messagesSubscription?.cancel();
     _connectedSubscription?.cancel();
+    _onlineUserIdsSubscription?.cancel();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -171,6 +181,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final peer = widget.chat.peer;
+    final isPeerOnline = _onlineUserIds.contains(peer.id);
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -188,7 +199,32 @@ class _ChatScreenState extends State<ChatScreen> {
               child: const Icon(Icons.person, size: 20),
             ),
             const SizedBox(width: 10),
-            Expanded(child: Text(peer.login, overflow: TextOverflow.ellipsis)),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(peer.login, overflow: TextOverflow.ellipsis),
+                  if (isPeerOnline)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          key: const Key('chat-peer-online-indicator'),
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text('Online', style: TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { sign } from 'jsonwebtoken';
 
+import { FriendsService } from '../friendships/friends.service';
 import { ChatsGateway, userRoom } from './chats.gateway';
 
 describe('ChatsGateway', () => {
@@ -9,8 +10,13 @@ describe('ChatsGateway', () => {
     getOrThrow: jest.fn().mockReturnValue(accessSecret),
   } as unknown as ConfigService;
 
-  it('authenticates the handshake and joins only the authenticated user room', () => {
-    const gateway = new ChatsGateway(configService);
+  const createFriendsService = (friendIds: string[] = []) =>
+    ({
+      getAcceptedFriendIds: jest.fn().mockResolvedValue(friendIds),
+    }) as unknown as FriendsService;
+
+  it('authenticates the handshake and joins only the authenticated user room', async () => {
+    const gateway = new ChatsGateway(configService, createFriendsService());
     let middleware:
       | ((
           socket: {
@@ -20,7 +26,11 @@ describe('ChatsGateway', () => {
           next: (error?: Error) => void,
         ) => void)
       | undefined;
-    const server = { use: jest.fn((callback) => (middleware = callback)) };
+    const server = {
+      use: jest.fn((callback) => (middleware = callback)),
+      in: jest.fn(),
+      to: jest.fn(),
+    };
     gateway.afterInit(server as never);
 
     const socket = {
@@ -29,11 +39,12 @@ describe('ChatsGateway', () => {
       },
       data: {},
       join: jest.fn(),
+      emit: jest.fn(),
       disconnect: jest.fn(),
     };
     const next = jest.fn();
     middleware!(socket, next);
-    gateway.handleConnection(socket as never);
+    await gateway.handleConnection(socket as never);
 
     expect(next).toHaveBeenCalledWith();
     expect(socket.join).toHaveBeenCalledWith(userRoom('user-id'));
@@ -41,7 +52,7 @@ describe('ChatsGateway', () => {
   });
 
   it('rejects an invalid handshake token', () => {
-    const gateway = new ChatsGateway(configService);
+    const gateway = new ChatsGateway(configService, createFriendsService());
     let middleware:
       | ((
           socket: { handshake: { auth: { token: string } } },
@@ -61,7 +72,7 @@ describe('ChatsGateway', () => {
   });
 
   it('publishes a JSON-safe message to every participant room once', () => {
-    const gateway = new ChatsGateway(configService);
+    const gateway = new ChatsGateway(configService, createFriendsService());
     const emit = jest.fn();
     const to = jest.fn().mockReturnValue({ emit });
     (gateway as unknown as { server: { to: typeof to } }).server = { to };
@@ -87,5 +98,128 @@ describe('ChatsGateway', () => {
       createdAt: '2026-09-13T10:00:00.000Z',
       updatedAt: '2026-09-13T10:00:00.000Z',
     });
+  });
+
+  it('sends snapshots containing only accepted friends that are online', async () => {
+    const friendsService = createFriendsService([
+      'online-friend',
+      'offline-friend',
+    ]);
+    const gateway = new ChatsGateway(configService, friendsService);
+    const fetchSockets = jest.fn((room: string) =>
+      Promise.resolve(room === userRoom('online-friend') ? [{}] : []),
+    );
+    const server = {
+      in: jest.fn((room: string) => ({
+        fetchSockets: () => fetchSockets(room),
+      })),
+      to: jest.fn().mockReturnValue({ emit: jest.fn() }),
+    };
+    (gateway as unknown as { server: typeof server }).server = server;
+    const socket = {
+      data: { user: { sub: 'user-id', login: 'alice' } },
+      join: jest.fn(),
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+    };
+
+    await gateway.handleConnection(socket as never);
+    await gateway.handlePresenceGet(socket as never);
+
+    expect(friendsService.getAcceptedFriendIds).toHaveBeenCalledWith('user-id');
+    expect(socket.emit).toHaveBeenNthCalledWith(1, 'presence.snapshot', {
+      onlineUserIds: ['online-friend'],
+    });
+    expect(socket.emit).toHaveBeenNthCalledWith(2, 'presence.snapshot', {
+      onlineUserIds: ['online-friend'],
+    });
+    expect(server.in).not.toHaveBeenCalledWith(userRoom('non-friend'));
+  });
+
+  it('notifies only accepted friend rooms when a user connects', async () => {
+    const gateway = new ChatsGateway(
+      configService,
+      createFriendsService(['friend-one', 'friend-two']),
+    );
+    const emit = jest.fn();
+    const server = {
+      in: jest
+        .fn()
+        .mockReturnValue({ fetchSockets: jest.fn().mockResolvedValue([]) }),
+      to: jest.fn().mockReturnValue({ emit }),
+    };
+    (gateway as unknown as { server: typeof server }).server = server;
+    const socket = {
+      data: { user: { sub: 'user-id', login: 'alice' } },
+      join: jest.fn(),
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+    };
+
+    await gateway.handleConnection(socket as never);
+
+    expect(server.to).toHaveBeenCalledWith(userRoom('friend-one'));
+    expect(server.to).toHaveBeenCalledWith(userRoom('friend-two'));
+    expect(emit).toHaveBeenCalledWith('presence.changed', {
+      userId: 'user-id',
+      isOnline: true,
+    });
+    expect(server.to).not.toHaveBeenCalledWith(userRoom('non-friend'));
+  });
+
+  it('announces offline only after the last socket disappears', async () => {
+    const gateway = new ChatsGateway(
+      configService,
+      createFriendsService(['friend-id']),
+    );
+    const emit = jest.fn();
+    const fetchSockets = jest
+      .fn()
+      .mockResolvedValueOnce([{}])
+      .mockResolvedValueOnce([]);
+    const server = {
+      in: jest.fn().mockReturnValue({ fetchSockets }),
+      to: jest.fn().mockReturnValue({ emit }),
+    };
+    (gateway as unknown as { server: typeof server }).server = server;
+    const socket = {
+      data: { user: { sub: 'user-id', login: 'alice' } },
+    };
+
+    await gateway.handleDisconnect(socket as never);
+    await gateway.handleDisconnect(socket as never);
+
+    expect(fetchSockets).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith('presence.changed', {
+      userId: 'user-id',
+      isOnline: false,
+    });
+  });
+
+  it('does not announce an offline transition when socket lookup fails', async () => {
+    const gateway = new ChatsGateway(
+      configService,
+      createFriendsService(['friend-id']),
+    );
+    const emit = jest.fn();
+    const server = {
+      in: jest.fn().mockReturnValue({
+        fetchSockets: jest
+          .fn()
+          .mockRejectedValue(new Error('Redis unavailable')),
+      }),
+      to: jest.fn().mockReturnValue({ emit }),
+    };
+    (gateway as unknown as { server: typeof server }).server = server;
+    (gateway as unknown as { logger: { warn: jest.Mock } }).logger = {
+      warn: jest.fn(),
+    };
+
+    await gateway.handleDisconnect({
+      data: { user: { sub: 'user-id', login: 'alice' } },
+    } as never);
+
+    expect(emit).not.toHaveBeenCalled();
   });
 });

@@ -35,6 +35,32 @@ type PresenceChangedEvent = {
   isOnline: boolean;
 };
 
+type TypingSetPayload = {
+  recipientUserId: string;
+  isTyping: boolean;
+};
+
+type TypingChangedEvent = {
+  userId: string;
+  isTyping: boolean;
+};
+
+const isTypingSetPayload = (payload: unknown): payload is TypingSetPayload => {
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    return false;
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  return (
+    typeof candidate.recipientUserId === 'string' &&
+    typeof candidate.isTyping === 'boolean'
+  );
+};
+
 @WebSocketGateway({
   namespace: '/chats',
   transports: ['websocket'],
@@ -121,6 +147,38 @@ export class ChatsGateway
     }
 
     await this.sendPresenceSnapshot(socket, user.sub);
+  }
+
+  @SubscribeMessage('typing.set')
+  async handleTypingSet(socket: Socket, payload: unknown): Promise<void> {
+    const user = socket.data.user as AccessTokenPayload | undefined;
+    if (!user) {
+      socket.disconnect(true);
+      return;
+    }
+
+    if (!isTypingSetPayload(payload) || payload.recipientUserId === user.sub) {
+      return;
+    }
+
+    try {
+      const friendIds = await this.friendsService.getAcceptedFriendIds(
+        user.sub,
+      );
+      if (!friendIds.includes(payload.recipientUserId)) {
+        return;
+      }
+
+      const typingChanged: TypingChangedEvent = {
+        userId: user.sub,
+        isTyping: payload.isTyping,
+      };
+      this.server
+        .to(userRoom(payload.recipientUserId))
+        .emit('typing.changed', typingChanged);
+    } catch {
+      this.logger.warn('Unable to forward typing change');
+    }
   }
 
   publishMessageCreated(

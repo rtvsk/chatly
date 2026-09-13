@@ -5,10 +5,13 @@ import 'package:chatly/services/chat_realtime_service.dart';
 
 class FakeChatRealtime implements ChatRealtime {
   late final StreamController<ChatMessage> _messagesController;
+  late final StreamController<TypingChangedEvent> _typingChangesController;
   late final StreamController<void> _connectedController;
   late final StreamController<Set<String>> _onlineUserIdsChangesController;
   int messageSubscriptions = 0;
   int messageCancellations = 0;
+  int typingChangesSubscriptions = 0;
+  int typingChangesCancellations = 0;
   int connectedSubscriptions = 0;
   int connectedCancellations = 0;
   int onlineUserIdsSubscriptions = 0;
@@ -16,6 +19,7 @@ class FakeChatRealtime implements ChatRealtime {
   int connectCalls = 0;
   int disconnectCalls = 0;
   int refreshPresenceCalls = 0;
+  final List<TypingChangedEvent> setTypingCalls = [];
   Set<String> _onlineUserIds;
 
   FakeChatRealtime({Iterable<String> onlineUserIds = const []})
@@ -23,6 +27,10 @@ class FakeChatRealtime implements ChatRealtime {
     _messagesController = StreamController<ChatMessage>.broadcast(
       onListen: () => messageSubscriptions++,
       onCancel: () => messageCancellations++,
+    );
+    _typingChangesController = StreamController<TypingChangedEvent>.broadcast(
+      onListen: () => typingChangesSubscriptions++,
+      onCancel: () => typingChangesCancellations++,
     );
     _connectedController = StreamController<void>.broadcast(
       onListen: () => connectedSubscriptions++,
@@ -36,6 +44,10 @@ class FakeChatRealtime implements ChatRealtime {
 
   @override
   Stream<ChatMessage> get messages => _messagesController.stream;
+
+  @override
+  Stream<TypingChangedEvent> get typingChanges =>
+      _typingChangesController.stream;
 
   @override
   Stream<void> get connected => _connectedController.stream;
@@ -58,6 +70,13 @@ class FakeChatRealtime implements ChatRealtime {
   }
 
   @override
+  void setTyping({required String recipientUserId, required bool isTyping}) {
+    setTypingCalls.add(
+      TypingChangedEvent(userId: recipientUserId, isTyping: isTyping),
+    );
+  }
+
+  @override
   void disconnect() {
     disconnectCalls++;
   }
@@ -65,6 +84,12 @@ class FakeChatRealtime implements ChatRealtime {
   void addMessage(ChatMessage message) => _messagesController.add(message);
 
   void signalConnected() => _connectedController.add(null);
+
+  void addTypingChanged({required String userId, required bool isTyping}) {
+    _typingChangesController.add(
+      TypingChangedEvent(userId: userId, isTyping: isTyping),
+    );
+  }
 
   void applyPresenceSnapshot(Iterable<String> onlineUserIds) {
     _onlineUserIds = Set<String>.unmodifiable(onlineUserIds);

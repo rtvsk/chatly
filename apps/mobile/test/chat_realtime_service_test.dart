@@ -19,6 +19,7 @@ class _TestSocket extends io.Socket {
   int disconnectCalls = 0;
   int disposeCalls = 0;
   final List<String> emittedEvents = [];
+  final List<dynamic> emittedPayloads = [];
 
   @override
   io.Socket connect() {
@@ -41,6 +42,7 @@ class _TestSocket extends io.Socket {
   @override
   void emit(String event, [dynamic data]) {
     emittedEvents.add(event);
+    emittedPayloads.add(data);
   }
 
   void triggerConnect() {
@@ -149,6 +151,47 @@ void main() {
       expect(socket.disconnectCalls, 1);
       expect(socket.disposeCalls, 1);
       expect(updates.where((update) => update.isEmpty), hasLength(2));
+
+      await subscription.cancel();
+    },
+  );
+
+  test(
+    'publishes valid typing changes and emits typing state for a recipient',
+    () async {
+      final socket = _TestSocket();
+      final realtime = ChatRealtimeService(
+        accessToken: () => 'access-token',
+        socketFactory: (_, _) => socket,
+      );
+      final changes = <TypingChangedEvent>[];
+      final subscription = realtime.typingChanges.listen(changes.add);
+
+      await realtime.connect();
+      socket.triggerConnect();
+      realtime.setTyping(recipientUserId: 'alice', isTyping: true);
+
+      expect(socket.emittedEvents, ['presence.get', 'typing.set']);
+      expect(socket.emittedPayloads.last, {
+        'recipientUserId': 'alice',
+        'isTyping': true,
+      });
+
+      socket.triggerEvent('typing.changed', {
+        'userId': 'alice',
+        'isTyping': true,
+      });
+      socket.triggerEvent('typing.changed', {'userId': 7, 'isTyping': true});
+      socket.triggerEvent('typing.changed', {
+        'userId': 'alice',
+        'isTyping': 'yes',
+      });
+      socket.triggerEvent('typing.changed', const ['not-a-map']);
+      await _flushEvents();
+
+      expect(changes, hasLength(1));
+      expect(changes.single.userId, 'alice');
+      expect(changes.single.isTyping, isTrue);
 
       await subscription.cancel();
     },

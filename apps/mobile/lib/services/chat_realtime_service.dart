@@ -8,8 +8,18 @@ import '../navigation/app_navigation.dart';
 import '../storage/token_storage.dart';
 import 'auth_service.dart';
 
+class TypingChangedEvent {
+  const TypingChangedEvent({required this.userId, required this.isTyping});
+
+  final String userId;
+  final bool isTyping;
+}
+
 abstract interface class ChatRealtime {
   Stream<ChatMessage> get messages;
+
+  /// Broadcasts validated typing-state changes received from other users.
+  Stream<TypingChangedEvent> get typingChanges;
 
   /// Emits after each successful Socket.IO connection, including reconnects.
   Stream<void> get connected;
@@ -24,6 +34,9 @@ abstract interface class ChatRealtime {
 
   /// Requests a fresh presence snapshot when the socket is connected.
   void refreshPresence();
+
+  /// Tells [recipientUserId] whether the current user is composing a message.
+  void setTyping({required String recipientUserId, required bool isTyping});
 
   void disconnect();
 }
@@ -45,6 +58,8 @@ class ChatRealtimeService implements ChatRealtime {
   _socketFactory;
   final StreamController<ChatMessage> _messages =
       StreamController<ChatMessage>.broadcast();
+  final StreamController<TypingChangedEvent> _typingChanges =
+      StreamController<TypingChangedEvent>.broadcast();
   final StreamController<void> _connected = StreamController<void>.broadcast();
   final StreamController<Set<String>> _onlineUserIdsChanges =
       StreamController<Set<String>>.broadcast();
@@ -58,6 +73,9 @@ class ChatRealtimeService implements ChatRealtime {
 
   @override
   Stream<ChatMessage> get messages => _messages.stream;
+
+  @override
+  Stream<TypingChangedEvent> get typingChanges => _typingChanges.stream;
 
   @override
   Stream<void> get connected => _connected.stream;
@@ -109,6 +127,17 @@ class ChatRealtimeService implements ChatRealtime {
         // Malformed realtime payloads must not terminate the authenticated UI.
       }
     });
+    socket.on('typing.changed', (payload) {
+      if (!_isCurrent(generation, socket) || payload is! Map) return;
+
+      final userId = payload['userId'];
+      final isTyping = payload['isTyping'];
+      if (userId is! String || isTyping is! bool) return;
+
+      _typingChanges.add(
+        TypingChangedEvent(userId: userId, isTyping: isTyping),
+      );
+    });
     socket.on('presence.snapshot', (payload) {
       if (!_isCurrent(generation, socket) || payload is! Map) return;
 
@@ -155,6 +184,17 @@ class ChatRealtimeService implements ChatRealtime {
     final socket = _socket;
     if (socket == null || !socket.connected) return;
     socket.emit('presence.get');
+  }
+
+  @override
+  void setTyping({required String recipientUserId, required bool isTyping}) {
+    final socket = _socket;
+    if (socket == null || !socket.connected) return;
+
+    socket.emit('typing.set', {
+      'recipientUserId': recipientUserId,
+      'isTyping': isTyping,
+    });
   }
 
   void _setOnlineUserIds(Iterable<String> userIds, {bool forceEmit = false}) {

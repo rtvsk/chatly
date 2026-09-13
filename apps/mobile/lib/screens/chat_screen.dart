@@ -31,13 +31,18 @@ class _ChatScreenState extends State<ChatScreen> {
   final Set<String> _messageIds = {};
   late final ChatRealtime _realtimeService;
   StreamSubscription<ChatMessage>? _messagesSubscription;
+  StreamSubscription<TypingChangedEvent>? _typingChangesSubscription;
   StreamSubscription<void>? _connectedSubscription;
   StreamSubscription<Set<String>>? _onlineUserIdsSubscription;
+  Timer? _typingInactivityTimer;
+  Timer? _peerTypingWatchdog;
   late Set<String> _onlineUserIds;
   bool _isLoading = true;
   bool _isFetching = false;
   bool _catchUpRequested = false;
   bool _isSending = false;
+  bool _isTyping = false;
+  bool _isPeerTyping = false;
   String? _initialError;
 
   @override
@@ -47,6 +52,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _messagesSubscription = _realtimeService.messages.listen(
       _onRealtimeMessage,
     );
+    _typingChangesSubscription = _realtimeService.typingChanges.listen((event) {
+      if (event.userId == widget.chat.peer.id) _onTypingChanged(event);
+    });
     _connectedSubscription = _realtimeService.connected.listen(
       (_) => unawaited(_fetchMessages()),
     );
@@ -54,7 +62,13 @@ class _ChatScreenState extends State<ChatScreen> {
     _onlineUserIdsSubscription = _realtimeService.onlineUserIdsChanges.listen((
       onlineUserIds,
     ) {
-      if (mounted) setState(() => _onlineUserIds = onlineUserIds);
+      if (!mounted) return;
+      setState(() {
+        _onlineUserIds = onlineUserIds;
+        if (!_onlineUserIds.contains(widget.chat.peer.id)) {
+          _clearPeerTyping();
+        }
+      });
     });
     _realtimeService.refreshPresence();
     unawaited(_fetchMessages(initial: true));
@@ -62,7 +76,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _typingInactivityTimer?.cancel();
+    _peerTypingWatchdog?.cancel();
+    _stopTyping();
     _messagesSubscription?.cancel();
+    _typingChangesSubscription?.cancel();
     _connectedSubscription?.cancel();
     _onlineUserIdsSubscription?.cancel();
     _textController.dispose();
@@ -78,6 +96,54 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {});
       _scrollToBottom();
     }
+  }
+
+  void _onTypingChanged(TypingChangedEvent event) {
+    if (!mounted) return;
+
+    if (!event.isTyping || !_onlineUserIds.contains(event.userId)) {
+      setState(_clearPeerTyping);
+      return;
+    }
+
+    _peerTypingWatchdog?.cancel();
+    _peerTypingWatchdog = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(_clearPeerTyping);
+    });
+    if (!_isPeerTyping) setState(() => _isPeerTyping = true);
+  }
+
+  void _clearPeerTyping() {
+    _peerTypingWatchdog?.cancel();
+    _peerTypingWatchdog = null;
+    _isPeerTyping = false;
+  }
+
+  void _onTextChanged(String value) {
+    _typingInactivityTimer?.cancel();
+    if (value.trim().isEmpty) {
+      _stopTyping();
+      return;
+    }
+
+    _isTyping = true;
+    _realtimeService.setTyping(
+      recipientUserId: widget.chat.peer.id,
+      isTyping: true,
+    );
+    _typingInactivityTimer = Timer(const Duration(seconds: 2), _stopTyping);
+  }
+
+  void _stopTyping() {
+    _typingInactivityTimer?.cancel();
+    _typingInactivityTimer = null;
+    if (!_isTyping) return;
+
+    _isTyping = false;
+    _realtimeService.setTyping(
+      recipientUserId: widget.chat.peer.id,
+      isTyping: false,
+    );
   }
 
   Future<void> _fetchMessages({bool initial = false}) async {
@@ -165,6 +231,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (!mounted) return;
       _textController.clear();
+      _stopTyping();
       final added = _appendMessages([message]);
       setState(() {});
       if (added) _scrollToBottom();
@@ -219,7 +286,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Text('Online', style: TextStyle(fontSize: 12)),
+                        Text(
+                          _isPeerTyping ? 'typing' : 'Online',
+                          style: const TextStyle(fontSize: 12),
+                        ),
                       ],
                     ),
                 ],
@@ -284,6 +354,7 @@ class _ChatScreenState extends State<ChatScreen> {
               minLines: 1,
               maxLines: 4,
               textCapitalization: TextCapitalization.sentences,
+              onChanged: _onTextChanged,
               onSubmitted: (_) => _send(),
               decoration: const InputDecoration(
                 hintText: 'Message',

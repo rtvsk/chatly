@@ -179,6 +179,112 @@ void main() {
     expect(find.byKey(const Key('chat-peer-online-indicator')), findsNothing);
   });
 
+  testWidgets('shows peer typing, restores Online, and expires stale typing', (
+    tester,
+  ) async {
+    final realtime = FakeChatRealtime(onlineUserIds: const ['peer-id']);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(
+          chat: _chat,
+          chatsService: FakeChatsService(),
+          realtimeService: realtime,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Online'), findsOneWidget);
+    realtime.addTypingChanged(userId: 'peer-id', isTyping: true);
+    await tester.pumpAndSettle();
+    expect(find.text('typing'), findsOneWidget);
+    expect(find.text('Online'), findsNothing);
+    expect(find.byKey(const Key('chat-peer-online-indicator')), findsOneWidget);
+
+    realtime.addTypingChanged(userId: 'peer-id', isTyping: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Online'), findsOneWidget);
+
+    realtime.addTypingChanged(userId: 'peer-id', isTyping: true);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('Online'), findsOneWidget);
+  });
+
+  testWidgets('clears peer typing when the peer goes offline', (tester) async {
+    final realtime = FakeChatRealtime(onlineUserIds: const ['peer-id']);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(
+          chat: _chat,
+          chatsService: FakeChatsService(),
+          realtimeService: realtime,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    realtime.addTypingChanged(userId: 'peer-id', isTyping: true);
+    await tester.pumpAndSettle();
+    expect(find.text('typing'), findsOneWidget);
+
+    realtime.applyPresenceChanged(userId: 'peer-id', isOnline: false);
+    await tester.pumpAndSettle();
+    expect(find.text('typing'), findsNothing);
+    expect(find.text('Online'), findsNothing);
+  });
+
+  testWidgets('emits typing true and false after inactivity and sending', (
+    tester,
+  ) async {
+    final realtime = FakeChatRealtime();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(
+          chat: _chat,
+          chatsService: FakeChatsService(),
+          realtimeService: realtime,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('chat-message-field')), 'Hi');
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.enterText(find.byKey(const Key('chat-message-field')), 'Hi!');
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(realtime.setTypingCalls.map((event) => event.isTyping), [
+      true,
+      true,
+    ]);
+    await tester.pump(const Duration(seconds: 1));
+    expect(realtime.setTypingCalls.map((event) => event.isTyping), [
+      true,
+      true,
+      false,
+    ]);
+
+    await tester.enterText(
+      find.byKey(const Key('chat-message-field')),
+      'Sending now',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('send-message-button')));
+    await tester.pumpAndSettle();
+    expect(realtime.setTypingCalls.map((event) => event.isTyping), [
+      true,
+      true,
+      false,
+      true,
+      false,
+    ]);
+  });
+
   testWidgets('cancels realtime subscriptions when disposed', (tester) async {
     final realtime = FakeChatRealtime();
 
@@ -192,11 +298,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.enterText(find.byKey(const Key('chat-message-field')), 'Hi');
     await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 2));
 
     expect(realtime.messageCancellations, 1);
+    expect(realtime.typingChangesCancellations, 1);
     expect(realtime.connectedCancellations, 1);
     expect(realtime.onlineUserIdsCancellations, 1);
+    expect(realtime.setTypingCalls.map((event) => event.isTyping), [
+      true,
+      false,
+    ]);
   });
 }

@@ -100,6 +100,89 @@ describe('ChatsGateway', () => {
     });
   });
 
+  it('forwards typing changes only to the accepted recipient room', async () => {
+    const friendsService = createFriendsService(['recipient-id']);
+    const gateway = new ChatsGateway(configService, friendsService);
+    const emit = jest.fn();
+    const to = jest.fn().mockReturnValue({ emit });
+    (gateway as unknown as { server: { to: typeof to } }).server = { to };
+    const socket = {
+      data: { user: { sub: 'sender-id', login: 'alice' } },
+      disconnect: jest.fn(),
+    };
+
+    await gateway.handleTypingSet(socket as never, {
+      recipientUserId: 'recipient-id',
+      isTyping: true,
+    });
+
+    expect(friendsService.getAcceptedFriendIds).toHaveBeenCalledWith('sender-id');
+    expect(to).toHaveBeenCalledWith(userRoom('recipient-id'));
+    expect(emit).toHaveBeenCalledWith('typing.changed', {
+      userId: 'sender-id',
+      isTyping: true,
+    });
+  });
+
+  it.each([
+    undefined,
+    { recipientUserId: 'recipient-id', isTyping: 'true' },
+    { recipientUserId: 42, isTyping: true },
+    [],
+  ])('ignores malformed typing payload %#', async (payload) => {
+    const friendsService = createFriendsService(['recipient-id']);
+    const gateway = new ChatsGateway(configService, friendsService);
+    const to = jest.fn();
+    (gateway as unknown as { server: { to: typeof to } }).server = { to };
+    const socket = {
+      data: { user: { sub: 'sender-id', login: 'alice' } },
+      disconnect: jest.fn(),
+    };
+
+    await gateway.handleTypingSet(socket as never, payload);
+
+    expect(friendsService.getAcceptedFriendIds).not.toHaveBeenCalled();
+    expect(to).not.toHaveBeenCalled();
+  });
+
+  it('ignores typing changes targeting the sender', async () => {
+    const friendsService = createFriendsService(['sender-id']);
+    const gateway = new ChatsGateway(configService, friendsService);
+    const to = jest.fn();
+    (gateway as unknown as { server: { to: typeof to } }).server = { to };
+    const socket = {
+      data: { user: { sub: 'sender-id', login: 'alice' } },
+      disconnect: jest.fn(),
+    };
+
+    await gateway.handleTypingSet(socket as never, {
+      recipientUserId: 'sender-id',
+      isTyping: false,
+    });
+
+    expect(friendsService.getAcceptedFriendIds).not.toHaveBeenCalled();
+    expect(to).not.toHaveBeenCalled();
+  });
+
+  it('ignores typing changes for users who are not accepted friends', async () => {
+    const friendsService = createFriendsService(['friend-id']);
+    const gateway = new ChatsGateway(configService, friendsService);
+    const to = jest.fn();
+    (gateway as unknown as { server: { to: typeof to } }).server = { to };
+    const socket = {
+      data: { user: { sub: 'sender-id', login: 'alice' } },
+      disconnect: jest.fn(),
+    };
+
+    await gateway.handleTypingSet(socket as never, {
+      recipientUserId: 'non-friend-id',
+      isTyping: true,
+    });
+
+    expect(friendsService.getAcceptedFriendIds).toHaveBeenCalledWith('sender-id');
+    expect(to).not.toHaveBeenCalled();
+  });
+
   it('sends snapshots containing only accepted friends that are online', async () => {
     const friendsService = createFriendsService([
       'online-friend',

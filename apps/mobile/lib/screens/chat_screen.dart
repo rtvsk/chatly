@@ -6,54 +6,75 @@ import '../constants.dart';
 import '../models/chat.dart';
 import '../services/api_service.dart';
 import '../services/chats_service.dart';
+import '../services/chat_realtime_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     required this.chat,
     this.chatsService = const ChatsService(),
+    this.realtimeService,
     super.key,
   });
 
   final ChatSummary chat;
   final ChatsService chatsService;
+  final ChatRealtime? realtimeService;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  static const _pollInterval = Duration(seconds: 15);
-
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   final Set<String> _messageIds = {};
-  Timer? _pollTimer;
+  late final ChatRealtime _realtimeService;
+  StreamSubscription<ChatMessage>? _messagesSubscription;
+  StreamSubscription<void>? _connectedSubscription;
   bool _isLoading = true;
   bool _isFetching = false;
+  bool _catchUpRequested = false;
   bool _isSending = false;
   String? _initialError;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_fetchMessages(initial: true));
-    _pollTimer = Timer.periodic(
-      _pollInterval,
+    _realtimeService = widget.realtimeService ?? ChatRealtimeService.instance;
+    _messagesSubscription = _realtimeService.messages.listen(
+      _onRealtimeMessage,
+    );
+    _connectedSubscription = _realtimeService.connected.listen(
       (_) => unawaited(_fetchMessages()),
     );
+    unawaited(_fetchMessages(initial: true));
   }
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
+    _messagesSubscription?.cancel();
+    _connectedSubscription?.cancel();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
+  void _onRealtimeMessage(ChatMessage message) {
+    if (!mounted || message.chatId != widget.chat.id) return;
+
+    final added = _appendMessages([message]);
+    if (added) {
+      setState(() {});
+      _scrollToBottom();
+    }
+  }
+
   Future<void> _fetchMessages({bool initial = false}) async {
-    if (_isFetching) return;
+    if (_isFetching) {
+      _catchUpRequested = true;
+      return;
+    }
     _isFetching = true;
 
     if (initial && mounted) {
@@ -84,9 +105,13 @@ class _ChatScreenState extends State<ChatScreen> {
           _initialError = 'Could not load messages';
         });
       }
-      // Polling failures intentionally keep already-loaded content visible.
+      // Keep already-loaded content visible when a catch-up request fails.
     } finally {
       _isFetching = false;
+      if (_catchUpRequested && mounted) {
+        _catchUpRequested = false;
+        unawaited(_fetchMessages());
+      }
     }
   }
 

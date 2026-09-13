@@ -5,6 +5,8 @@ import 'package:chatly/services/chats_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'chat_realtime_test_support.dart';
+
 class FakeChatsService extends ChatsService {
   FakeChatsService({this.chats = const [], this.shouldFail = false});
 
@@ -32,9 +34,12 @@ ChatSummary _chat({ChatMessage? lastMessage}) {
 }
 
 void main() {
-  Widget app(FakeChatsService service) => MaterialApp(
-    home: Scaffold(body: ChatsTab(chatsService: service)),
-  );
+  Widget app(FakeChatsService service, {FakeChatRealtime? realtime}) =>
+      MaterialApp(
+        home: Scaffold(
+          body: ChatsTab(chatsService: service, realtimeService: realtime),
+        ),
+      );
 
   testWidgets('shows direct chats returned by the service', (tester) async {
     final service = FakeChatsService(
@@ -68,5 +73,43 @@ void main() {
     await tester.tap(find.text('Retry'));
     await tester.pumpAndSettle();
     expect(service.calls, 2);
+  });
+
+  testWidgets('refreshes the chat list for each realtime message', (
+    tester,
+  ) async {
+    final service = FakeChatsService(chats: [_chat()]);
+    final realtime = FakeChatRealtime();
+
+    await tester.pumpWidget(app(service, realtime: realtime));
+    await tester.pumpAndSettle();
+    expect(service.calls, 1);
+
+    realtime.addMessage(
+      ChatMessage(
+        id: 'message-id',
+        chatId: 'chat-id',
+        senderId: 'peer-id',
+        text: 'A new message',
+        createdAt: DateTime.utc(2026, 9, 13, 11),
+        updatedAt: DateTime.utc(2026, 9, 13, 11),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(service.calls, 2);
+  });
+
+  testWidgets('cancels the realtime subscription when disposed', (
+    tester,
+  ) async {
+    final realtime = FakeChatRealtime();
+
+    await tester.pumpWidget(app(FakeChatsService(), realtime: realtime));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+
+    expect(realtime.messageCancellations, 1);
   });
 }

@@ -1,7 +1,12 @@
 import { DatabaseService } from '../database/database.service';
+import { ChatsGateway } from './chats.gateway';
 import { ChatsService } from './chats.service';
 
 describe('ChatsService', () => {
+  const gateway = {
+    publishMessageCreated: jest.fn(),
+  } as unknown as ChatsGateway;
+
   it('returns direct chat summaries with a nullable last message', async () => {
     const createdAt = new Date('2026-09-13T09:00:00.000Z');
     const builder = {
@@ -26,9 +31,12 @@ describe('ChatsService', () => {
         },
       ]),
     };
-    const service = new ChatsService({
-      db: { select: jest.fn().mockReturnValue(builder) },
-    } as unknown as DatabaseService);
+    const service = new ChatsService(
+      {
+        db: { select: jest.fn().mockReturnValue(builder) },
+      } as unknown as DatabaseService,
+      gateway,
+    );
 
     await expect(service.getMyChats('current-user')).resolves.toEqual([
       {
@@ -71,15 +79,30 @@ describe('ChatsService', () => {
       set: jest.fn().mockReturnThis(),
       where: jest.fn().mockResolvedValue(undefined),
     };
+    const participantRowsQuery = {
+      from: jest.fn().mockReturnThis(),
+      where: jest
+        .fn()
+        .mockResolvedValue([
+          { userId: 'current-user' },
+          { userId: 'peer-user' },
+        ]),
+    };
     const tx = {
-      select: jest.fn().mockReturnValue(participantQuery),
+      select: jest
+        .fn()
+        .mockReturnValueOnce(participantQuery)
+        .mockReturnValueOnce(participantRowsQuery),
       insert: jest.fn().mockReturnValue(insertMessage),
       update: jest.fn().mockReturnValue(updateChat),
     };
     const transaction = jest.fn(async (callback) => callback(tx));
-    const service = new ChatsService({
-      db: { transaction },
-    } as unknown as DatabaseService);
+    const service = new ChatsService(
+      {
+        db: { transaction },
+      } as unknown as DatabaseService,
+      gateway,
+    );
 
     await expect(
       service.sendMessage('current-user', 'chat-id', '  Hello  '),
@@ -94,14 +117,21 @@ describe('ChatsService', () => {
     expect(updateChat.set).toHaveBeenCalledWith(
       expect.objectContaining({ lastMessageId: 'message-id' }),
     );
+    expect(gateway.publishMessageCreated).toHaveBeenCalledWith(
+      ['current-user', 'peer-user'],
+      message,
+    );
   });
 
   it.each(['   ', 'x'.repeat(4001), null])(
     'rejects an invalid message body',
     async (text) => {
-      const service = new ChatsService({
-        db: { transaction: jest.fn() },
-      } as unknown as DatabaseService);
+      const service = new ChatsService(
+        {
+          db: { transaction: jest.fn() },
+        } as unknown as DatabaseService,
+        gateway,
+      );
 
       await expect(
         service.sendMessage('current-user', 'chat-id', text),
@@ -111,9 +141,12 @@ describe('ChatsService', () => {
 
   it('rejects direct-chat creation for oneself before querying the database', async () => {
     const select = jest.fn();
-    const service = new ChatsService({
-      db: { select },
-    } as unknown as DatabaseService);
+    const service = new ChatsService(
+      {
+        db: { select },
+      } as unknown as DatabaseService,
+      gateway,
+    );
 
     await expect(
       service.getOrCreateDirectChat('current-user', 'current-user'),
@@ -135,12 +168,15 @@ describe('ChatsService', () => {
     };
     const tx = { select: jest.fn().mockReturnValue(friendshipQuery) };
     const transaction = jest.fn(async (callback) => callback(tx));
-    const service = new ChatsService({
-      db: {
-        select: jest.fn().mockReturnValue(userQuery),
-        transaction,
-      },
-    } as unknown as DatabaseService);
+    const service = new ChatsService(
+      {
+        db: {
+          select: jest.fn().mockReturnValue(userQuery),
+          transaction,
+        },
+      } as unknown as DatabaseService,
+      gateway,
+    );
 
     await expect(
       service.getOrCreateDirectChat('current-user', 'peer-id'),
@@ -155,12 +191,32 @@ describe('ChatsService', () => {
       where: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue([]),
     };
-    const service = new ChatsService({
-      db: { select: jest.fn().mockReturnValue(participantQuery) },
-    } as unknown as DatabaseService);
+    const service = new ChatsService(
+      {
+        db: { select: jest.fn().mockReturnValue(participantQuery) },
+      } as unknown as DatabaseService,
+      gateway,
+    );
 
     await expect(
       service.getMessages('outsider-id', 'chat-id'),
     ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('does not publish a message when its transaction fails', async () => {
+    const publishMessageCreated = jest.fn();
+    const service = new ChatsService(
+      {
+        db: {
+          transaction: jest.fn().mockRejectedValue(new Error('database error')),
+        },
+      } as unknown as DatabaseService,
+      { publishMessageCreated } as unknown as ChatsGateway,
+    );
+
+    await expect(
+      service.sendMessage('current-user', 'chat-id', 'Hello'),
+    ).rejects.toThrow('database error');
+    expect(publishMessageCreated).not.toHaveBeenCalled();
   });
 });

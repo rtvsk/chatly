@@ -6,6 +6,7 @@ import '../models/contact.dart';
 import '../models/friend_request.dart';
 import '../services/api_service.dart';
 import '../services/chats_service.dart';
+import '../services/chat_realtime_service.dart';
 import '../services/friends_service.dart';
 import 'chat_screen.dart';
 
@@ -14,12 +15,14 @@ class UserProfileScreen extends StatefulWidget {
     required this.user,
     this.friendsService = const FriendsService(),
     this.chatsService = const ChatsService(),
+    this.realtimeService,
     super.key,
   });
 
   final Contact user;
   final FriendsService friendsService;
   final ChatsService chatsService;
+  final ChatRealtime? realtimeService;
 
   @override
   State<UserProfileScreen> createState() => _UserProfileScreenState();
@@ -138,9 +141,15 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           await widget.chatsService.createDirectChat(widget.user.id);
       if (!mounted) return;
       setState(() => _directChat = chat);
-      await Navigator.of(
-        context,
-      ).push<void>(MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)));
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            chat: chat,
+            realtimeService:
+                widget.realtimeService ?? ChatRealtimeService.instance,
+          ),
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(

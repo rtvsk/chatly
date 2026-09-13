@@ -5,16 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { alias } from 'drizzle-orm/pg-core';
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  ne,
-  or,
-  sql,
-} from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 
 import { DatabaseService } from '../database/database.service';
 import {
@@ -26,6 +17,7 @@ import {
   users,
 } from '../database/schema';
 import { FriendshipStatus } from '../friendships/enums/friendship-status.enum';
+import { ChatsGateway } from './chats.gateway';
 
 export type ChatMessage = {
   id: string;
@@ -71,7 +63,10 @@ const peerAvatar = alias(avatars, 'chat_peer_avatar');
 
 @Injectable()
 export class ChatsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly chatsGateway: ChatsGateway,
+  ) {}
 
   async getMyChats(userId: string): Promise<ChatSummary[]> {
     const rows = await this.database.db
@@ -128,7 +123,11 @@ export class ChatsService {
   ): Promise<ChatSummary | null> {
     await this.assertDirectChatAllowed(userId, peerId);
 
-    const chatId = await this.findDirectChatId(this.database.db, userId, peerId);
+    const chatId = await this.findDirectChatId(
+      this.database.db,
+      userId,
+      peerId,
+    );
     if (!chatId) {
       return null;
     }
@@ -255,28 +254,41 @@ export class ChatsService {
       );
     }
 
-    return this.database.db.transaction(async (tx) => {
-      await this.assertParticipant(tx, userId, chatId, true);
+    const { message, participantIds } = await this.database.db.transaction(
+      async (tx) => {
+        await this.assertParticipant(tx, userId, chatId, true);
 
-      const [message] = await tx
-        .insert(messages)
-        .values({ chatId, senderId: userId, text: trimmedText })
-        .returning({
-          id: messages.id,
-          chatId: messages.chatId,
-          senderId: messages.senderId,
-          text: messages.text,
-          createdAt: messages.createdAt,
-          updatedAt: messages.updatedAt,
-        });
+        const [message] = await tx
+          .insert(messages)
+          .values({ chatId, senderId: userId, text: trimmedText })
+          .returning({
+            id: messages.id,
+            chatId: messages.chatId,
+            senderId: messages.senderId,
+            text: messages.text,
+            createdAt: messages.createdAt,
+            updatedAt: messages.updatedAt,
+          });
 
-      await tx
-        .update(chats)
-        .set({ lastMessageId: message.id, updatedAt: new Date() })
-        .where(eq(chats.id, chatId));
+        await tx
+          .update(chats)
+          .set({ lastMessageId: message.id, updatedAt: new Date() })
+          .where(eq(chats.id, chatId));
 
-      return message;
-    });
+        const participants = await tx
+          .select({ userId: chatParticipants.userId })
+          .from(chatParticipants)
+          .where(eq(chatParticipants.chatId, chatId));
+
+        return {
+          message,
+          participantIds: participants.map((participant) => participant.userId),
+        };
+      },
+    );
+    this.chatsGateway.publishMessageCreated(participantIds, message);
+
+    return message;
   }
 
   private assertNotSelf(userId: string, peerId: string): void {
@@ -435,7 +447,9 @@ export class ChatsService {
       peer: {
         id: row.peerId,
         login: row.peerLogin,
-        avatarUrl: row.peerAvatarId ? `/avatars/${row.peerAvatarId}/file` : null,
+        avatarUrl: row.peerAvatarId
+          ? `/avatars/${row.peerAvatarId}/file`
+          : null,
       },
       lastMessage: row.lastMessageId
         ? {

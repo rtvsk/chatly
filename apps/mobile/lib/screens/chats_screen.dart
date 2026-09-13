@@ -8,6 +8,7 @@ import '../models/avatar.dart';
 import '../models/chat.dart';
 import '../models/contact.dart';
 import '../services/avatar_service.dart';
+import '../services/chat_realtime_service.dart';
 import '../services/chats_service.dart';
 import '../services/contacts_service.dart';
 import '../services/friends_service.dart';
@@ -19,7 +20,9 @@ import './chat_screen.dart';
 import './user_profile_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
-  const ChatsScreen({super.key});
+  const ChatsScreen({super.key, this.realtimeService});
+
+  final ChatRealtime? realtimeService;
   @override
   State<ChatsScreen> createState() => _ChatsScreenState();
 }
@@ -29,6 +32,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   final GlobalKey<_ContactsTabState> _contactsKey = GlobalKey();
   final GlobalKey<_ChatsTabState> _chatsKey = GlobalKey();
   Timer? _notificationsTimer;
+  late final ChatRealtime _realtimeService;
   String? login;
   Avatar? currentAvatar;
   int currentIndex = 0;
@@ -37,6 +41,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
   @override
   void initState() {
     super.initState();
+    _realtimeService = widget.realtimeService ?? ChatRealtimeService.instance;
+    unawaited(_realtimeService.connect());
     _loadLogin();
     _refreshNotifications();
     _notificationsTimer = Timer.periodic(
@@ -48,6 +54,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   @override
   void dispose() {
     _notificationsTimer?.cancel();
+    _realtimeService.disconnect();
     super.dispose();
   }
 
@@ -106,6 +113,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   Future<void> _logout() async {
+    _realtimeService.disconnect();
     await TokenStorage.instance.clearSession();
 
     if (!mounted) return;
@@ -120,8 +128,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final userLogin = login ?? 'Loading...';
 
     final pages = [
-      ContactsTab(key: _contactsKey),
-      ChatsTab(key: _chatsKey),
+      ContactsTab(key: _contactsKey, realtimeService: _realtimeService),
+      ChatsTab(key: _chatsKey, realtimeService: _realtimeService),
       ProfileTab(
         login: userLogin,
         onAvatarsChanged: _refreshCurrentAvatar,
@@ -229,10 +237,12 @@ class ContactsTab extends StatefulWidget {
     super.key,
     this.contactsService = const ContactsService(),
     this.friendsService = const FriendsService(),
+    this.realtimeService,
   });
 
   final ContactsService contactsService;
   final FriendsService friendsService;
+  final ChatRealtime? realtimeService;
 
   @override
   State<ContactsTab> createState() => _ContactsTabState();
@@ -243,6 +253,7 @@ class _ContactsTabState extends State<ContactsTab> {
 
   final _searchController = TextEditingController();
   Timer? _searchDebounce;
+  late final ChatRealtime _realtimeService;
   List<Contact> _contacts = const [];
   List<Contact> _searchResults = const [];
   bool _isLoadingContacts = true;
@@ -255,6 +266,7 @@ class _ContactsTabState extends State<ContactsTab> {
   @override
   void initState() {
     super.initState();
+    _realtimeService = widget.realtimeService ?? ChatRealtimeService.instance;
     _loadContacts();
   }
 
@@ -435,6 +447,7 @@ class _ContactsTabState extends State<ContactsTab> {
                 builder: (_) => UserProfileScreen(
                   user: contact,
                   friendsService: widget.friendsService,
+                  realtimeService: _realtimeService,
                 ),
               ),
             );
@@ -449,9 +462,14 @@ class _ContactsTabState extends State<ContactsTab> {
 }
 
 class ChatsTab extends StatefulWidget {
-  const ChatsTab({super.key, this.chatsService = const ChatsService()});
+  const ChatsTab({
+    super.key,
+    this.chatsService = const ChatsService(),
+    this.realtimeService,
+  });
 
   final ChatsService chatsService;
+  final ChatRealtime? realtimeService;
 
   @override
   State<ChatsTab> createState() => _ChatsTabState();
@@ -461,11 +479,23 @@ class _ChatsTabState extends State<ChatsTab> {
   List<ChatSummary> _chats = const [];
   bool _isLoading = true;
   String? _error;
+  late final ChatRealtime _realtimeService;
+  StreamSubscription<ChatMessage>? _messagesSubscription;
 
   @override
   void initState() {
     super.initState();
+    _realtimeService = widget.realtimeService ?? ChatRealtimeService.instance;
+    _messagesSubscription = _realtimeService.messages.listen(
+      (_) => unawaited(_loadChats()),
+    );
     _loadChats();
+  }
+
+  @override
+  void dispose() {
+    _messagesSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadChats() async {
@@ -538,7 +568,10 @@ class _ChatsTabState extends State<ChatsTab> {
           ),
           onTap: () async {
             await Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
+              MaterialPageRoute(
+                builder: (_) =>
+                    ChatScreen(chat: chat, realtimeService: _realtimeService),
+              ),
             );
             if (mounted) await _loadChats();
           },

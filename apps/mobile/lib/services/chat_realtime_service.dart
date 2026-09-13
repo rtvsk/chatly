@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../constants.dart';
@@ -112,6 +113,22 @@ class ChatRealtimeService implements ChatRealtime {
           .build(),
     );
     _socket = socket;
+
+    socket.onAny((event, data) {
+      debugPrint('WS IN  $event: $data');
+    });
+    socket.onAnyOutgoing((event, data) {
+      debugPrint('WS OUT $event: $data');
+    });
+    socket.onConnect((_) {
+      debugPrint('WS CONNECTED: ${socket.id}');
+    });
+    socket.onDisconnect((reason) {
+      debugPrint('WS DISCONNECTED: $reason');
+    });
+    socket.onConnectError((error) {
+      debugPrint('WS CONNECT ERROR: $error');
+    });
 
     socket.onConnect((_) {
       if (!_isCurrent(generation, socket)) return;

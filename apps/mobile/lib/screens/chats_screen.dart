@@ -421,14 +421,19 @@ class _ContactsTabState extends State<ContactsTab> {
             child: const Icon(Icons.person),
           ),
           title: Text(contact.login),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => UserProfileScreen(
-                user: contact,
-                friendsService: widget.friendsService,
+          onTap: () async {
+            final wasRemoved = await Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) => UserProfileScreen(
+                  user: contact,
+                  friendsService: widget.friendsService,
+                ),
               ),
-            ),
-          ),
+            );
+            if (wasRemoved == true && mounted) {
+              await _loadContacts();
+            }
+          },
         );
       },
     );

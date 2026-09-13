@@ -9,12 +9,16 @@ import 'package:flutter_test/flutter_test.dart';
 class FakeContactsService extends ContactsService {
   FakeContactsService({this.friends = const [], this.searchResults = const {}});
 
-  final List<Contact> friends;
+  List<Contact> friends;
   final Map<String, List<Contact>> searchResults;
   final List<String> searchCalls = [];
+  int getFriendsCalls = 0;
 
   @override
-  Future<List<Contact>> getFriends() async => friends;
+  Future<List<Contact>> getFriends() async {
+    getFriendsCalls += 1;
+    return friends;
+  }
 
   @override
   Future<List<Contact>> searchUsers(String login) async {
@@ -24,9 +28,22 @@ class FakeContactsService extends ContactsService {
 }
 
 class FakeFriendsService extends FriendsService {
+  FakeFriendsService({
+    this.friendshipState = FriendshipState.none,
+    this.onRemove,
+  });
+
+  final FriendshipState friendshipState;
+  final VoidCallback? onRemove;
+
   @override
   Future<FriendshipState> getFriendshipStatus(String userId) async {
-    return FriendshipState.none;
+    return friendshipState;
+  }
+
+  @override
+  Future<void> removeFriend(String userId) async {
+    onRemove?.call();
   }
 }
 
@@ -136,4 +153,38 @@ void main() {
       expect(find.text('No users found'), findsNothing);
     },
   );
+
+  testWidgets('reloads friends after removal while preserving search results', (
+    tester,
+  ) async {
+    final service = FakeContactsService(
+      friends: [const Contact(id: 'friend', login: 'alex')],
+      searchResults: const {
+        'ale': [Contact(id: 'friend', login: 'alex')],
+      },
+    );
+    final friendsService = FakeFriendsService(
+      friendshipState: FriendshipState.friends,
+      onRemove: () => service.friends = const [],
+    );
+    await tester.pumpWidget(_appWith(service, friendsService: friendsService));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('contacts-search-field')),
+      'ale',
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('alex'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('remove-friend-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-remove-friend')));
+    await tester.pumpAndSettle();
+
+    expect(service.getFriendsCalls, 2);
+    expect(find.text('alex'), findsOneWidget);
+    expect(find.text('No contacts'), findsNothing);
+  });
 }

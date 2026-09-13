@@ -3,11 +3,17 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { and, desc, eq, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { DatabaseService } from '../database/database.service';
-import { avatars, friendships, users } from '../database/schema';
+import {
+  avatars,
+  chatParticipants,
+  chats,
+  friendships,
+  users,
+} from '../database/schema';
 import { FriendshipStatus } from './enums/friendship-status.enum';
 
 const requester = alias(users, 'requester');
@@ -129,6 +135,52 @@ export class FriendsService {
     }
 
     return friendship;
+  }
+
+  async removeFriend(userId: string, otherUserId: string): Promise<void> {
+    await this.database.db.transaction(async (tx) => {
+      const [friendship] = await tx
+        .delete(friendships)
+        .where(
+          and(
+            eq(friendships.status, FriendshipStatus.ACCEPTED),
+            or(
+              and(
+                eq(friendships.requesterId, userId),
+                eq(friendships.receiverId, otherUserId),
+              ),
+              and(
+                eq(friendships.requesterId, otherUserId),
+                eq(friendships.receiverId, userId),
+              ),
+            ),
+          ),
+        )
+        .returning({ id: friendships.id });
+
+      if (!friendship) {
+        throw new NotFoundException('Friendship not found');
+      }
+
+      const directChats = await tx
+        .select({ id: chats.id })
+        .from(chats)
+        .innerJoin(chatParticipants, eq(chatParticipants.chatId, chats.id))
+        .where(eq(chats.type, 'direct'))
+        .groupBy(chats.id)
+        .having(
+          sql`count(*) = 2 and count(*) filter (where ${chatParticipants.userId} in (${userId}, ${otherUserId})) = 2`,
+        );
+
+      if (directChats.length > 0) {
+        await tx.delete(chats).where(
+          inArray(
+            chats.id,
+            directChats.map((chat) => chat.id),
+          ),
+        );
+      }
+    });
   }
 
   async getIncomingRequests(userId: string) {

@@ -45,6 +45,11 @@ class FriendsService {
     _requireSuccess(response.statusCode);
   }
 
+  Future<void> removeFriend(String userId) async {
+    final response = await ApiService.instance.delete('/friends/$userId');
+    _requireSuccess(response.statusCode);
+  }
+
   void _requireSuccess(int statusCode) {
     if (statusCode < 200 || statusCode >= 300) {
       throw Exception('Friendship request failed ($statusCode)');

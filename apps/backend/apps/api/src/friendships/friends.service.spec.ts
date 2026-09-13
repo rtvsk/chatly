@@ -82,4 +82,95 @@ describe('FriendsService', () => {
     ).resolves.toEqual(friendship);
     expect(builder.set).toHaveBeenCalledTimes(1);
   });
+
+  it('removes an accepted friendship in either direction and its exact direct chat', async () => {
+    const friendshipDelete = {
+      where: jest.fn(() => ({
+        returning: jest.fn().mockResolvedValue([{ id: 'friendship-id' }]),
+      })),
+    };
+    const directChats = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      having: jest.fn().mockResolvedValue([{ id: 'direct-chat-id' }]),
+    };
+    const chatDelete = { where: jest.fn().mockResolvedValue(undefined) };
+    const tx = {
+      delete: jest
+        .fn()
+        .mockReturnValueOnce(friendshipDelete)
+        .mockReturnValueOnce(chatDelete),
+      select: jest.fn().mockReturnValue(directChats),
+    };
+    const transaction = jest.fn(async (callback) => callback(tx));
+    const service = new FriendsService({
+      db: { transaction },
+    } as unknown as DatabaseService);
+
+    await expect(
+      service.removeFriend('receiver-id', 'requester-id'),
+    ).resolves.toBeUndefined();
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(friendshipDelete.where).toHaveBeenCalledTimes(1);
+    expect(directChats.having).toHaveBeenCalledTimes(1);
+    expect(chatDelete.where).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves group and multi-participant direct chats by deleting only exact direct-chat matches', async () => {
+    const friendshipDelete = {
+      where: jest.fn(() => ({
+        returning: jest.fn().mockResolvedValue([{ id: 'friendship-id' }]),
+      })),
+    };
+    const directChats = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      // The query's HAVING clause returns only chats with exactly the two users.
+      having: jest.fn().mockResolvedValue([]),
+    };
+    const chatDelete = { where: jest.fn().mockResolvedValue(undefined) };
+    const tx = {
+      delete: jest
+        .fn()
+        .mockReturnValueOnce(friendshipDelete)
+        .mockReturnValueOnce(chatDelete),
+      select: jest.fn().mockReturnValue(directChats),
+    };
+    const transaction = jest.fn(async (callback) => callback(tx));
+    const service = new FriendsService({
+      db: { transaction },
+    } as unknown as DatabaseService);
+
+    await service.removeFriend('current-user', 'friend-user');
+
+    expect(directChats.groupBy).toHaveBeenCalledTimes(1);
+    expect(directChats.having).toHaveBeenCalledTimes(1);
+    expect(chatDelete.where).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 and leaves chats untouched when users are not accepted friends', async () => {
+    const friendshipDelete = {
+      where: jest.fn(() => ({
+        returning: jest.fn().mockResolvedValue([]),
+      })),
+    };
+    const tx = {
+      delete: jest.fn().mockReturnValue(friendshipDelete),
+      select: jest.fn(),
+    };
+    const transaction = jest.fn(async (callback) => callback(tx));
+    const service = new FriendsService({
+      db: { transaction },
+    } as unknown as DatabaseService);
+
+    await expect(
+      service.removeFriend('current-user', 'not-a-friend'),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(tx.select).not.toHaveBeenCalled();
+  });
 });

@@ -69,6 +69,50 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
+  Future<void> _removeFriend() async {
+    final shouldRemove = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove friend?'),
+        content: const Text(
+          'This will also delete your shared chat and its history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm-remove-friend'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove friend'),
+          ),
+        ],
+      ),
+    );
+    if (shouldRemove != true || !mounted) return;
+
+    setState(() => _isSending = true);
+
+    try {
+      await widget.friendsService.removeFriend(widget.user.id);
+      if (!mounted) return;
+      setState(() => _friendshipState = FriendshipState.none);
+      Navigator.of(context).pop(true);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not remove friend')));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -127,9 +171,15 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         icon: const Icon(Icons.person_add_alt_1),
         label: Text(_isSending ? 'Sending...' : 'Add friend'),
       ),
-      FriendshipState.friends => const Chip(
-        avatar: Icon(Icons.check),
-        label: Text('Friends'),
+      FriendshipState.friends => FilledButton.icon(
+        key: const Key('remove-friend-button'),
+        style: FilledButton.styleFrom(
+          backgroundColor: Theme.of(context).colorScheme.error,
+          foregroundColor: Theme.of(context).colorScheme.onError,
+        ),
+        onPressed: _isSending ? null : _removeFriend,
+        icon: const Icon(Icons.person_remove),
+        label: Text(_isSending ? 'Removing...' : 'Remove friend'),
       ),
       FriendshipState.outgoingPending => const Chip(
         avatar: Icon(Icons.schedule),

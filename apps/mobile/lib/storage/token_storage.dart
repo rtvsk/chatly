@@ -1,6 +1,20 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-class TokenStorage {
+abstract interface class AuthSessionStorage {
+  Future<String?> getRefreshToken();
+
+  Future<String?> getUserLogin();
+
+  Future<void> saveTokens({
+    required String accessToken,
+    required String refreshToken,
+    required String userLogin,
+  });
+
+  Future<void> clearSession();
+}
+
+class TokenStorage implements AuthSessionStorage {
   TokenStorage._();
 
   static final TokenStorage instance = TokenStorage._();
@@ -21,12 +35,10 @@ class TokenStorage {
   }
 
   Future<void> saveRefreshToken(String refreshToken) async {
-    await _secureStorage.write(
-      key: _refreshTokenKey,
-      value: refreshToken,
-    );
+    await _secureStorage.write(key: _refreshTokenKey, value: refreshToken);
   }
 
+  @override
   Future<String?> getRefreshToken() {
     return _secureStorage.read(key: _refreshTokenKey);
   }
@@ -37,17 +49,15 @@ class TokenStorage {
   }
 
   Future<void> saveUserLogin(String login) async {
-    await _secureStorage.write(
-      key: _userLoginKey,
-      value: login,
-    );
-
+    await _secureStorage.write(key: _userLoginKey, value: login);
   }
 
+  @override
   Future<String?> getUserLogin() {
     return _secureStorage.read(key: _userLoginKey);
   }
 
+  @override
   Future<void> saveTokens({
     required String accessToken,
     required String refreshToken,
@@ -57,16 +67,17 @@ class TokenStorage {
 
     await Future.wait([
       saveRefreshToken(refreshToken),
-      saveUserLogin(userLogin)
+      saveUserLogin(userLogin),
     ]);
   }
 
+  @override
   Future<void> clearSession() async {
     _accessToken = null;
 
     await Future.wait([
       _secureStorage.delete(key: _refreshTokenKey),
-      _secureStorage.delete(key: _userLoginKey)
+      _secureStorage.delete(key: _userLoginKey),
     ]);
   }
 }

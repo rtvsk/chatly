@@ -26,6 +26,7 @@ export default defineConfig({
   tablesFilter: [
     'users',
     'refresh_tokens',
+    'email_verification_tokens',
     'chats',
     'chat_participants',
     'messages',

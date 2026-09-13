@@ -58,9 +58,16 @@ The consumer declares both the durable main queue and `MAIL_DLQ` (default
 delivery. Invalid messages, unsupported templates, and SMTP failures are
 rejected without requeue and routed to the DLQ.
 
-The currently supported template is `google-link`. It sends a Google link to
-the event's `to` address and uses the optional event subject or `Google` by
-default.
+Supported templates are `google-link` and `email-verification`. The latter
+requires `context.verificationUrl` and sends a confirmation link to the event's
+`to` address.
+
+The API publishes `email-verification` events after signup. Set this required
+public API URL (the API appends the opaque token as its `token` query parameter):
+
+```bash
+EMAIL_VERIFICATION_BASE_URL=http://localhost:3000/auth/verify-email
+```
 
 Configure Gmail with environment variables; never commit their values:
 

@@ -135,6 +135,7 @@ REDIS_PORT=6379
 RABBITMQ_URL=amqp://chatly:chatly@localhost:5672
 MAIL_QUEUE=mail.events
 MAIL_DLQ=mail.events.dlq
+EMAIL_VERIFICATION_BASE_URL=http://localhost:3000/auth/verify-email
 GMAIL_USER=sender@gmail.com
 GMAIL_APP_PASSWORD=replace-with-a-google-app-password
 S3_ENDPOINT=http://localhost:9000
@@ -175,10 +176,10 @@ baseline that database with `drizzle-kit pull --init` first.
 }
 ```
 
-The supported `google-link` template sends a Google link to the address in
-`to`, using `subject` when supplied and `Google` otherwise. Gmail SMTP uses
-TLS on port `465` and requires `GMAIL_USER` plus a Google App Password in
-`GMAIL_APP_PASSWORD`.
+The supported templates are `google-link` and `email-verification`. The latter
+requires `context.verificationUrl` and is published by the API after signup.
+Gmail SMTP uses TLS on port `465` and requires `GMAIL_USER` plus a Google App
+Password in `GMAIL_APP_PASSWORD`.
 
 Successful events are acknowledged only after Gmail accepts the message.
 Invalid events, unsupported templates, and SMTP errors are rejected without

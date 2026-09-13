@@ -2,9 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../services/auth_service.dart';
+import '../services/auth_service.dart';
 import 'chats_screen.dart';
 import 'signup_screen.dart';
+import 'verify_email_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -47,14 +48,22 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _checkSession() async {
     final refreshResult = await _authService.refreshSession();
-    final isAuthenticated = refreshResult == RefreshSessionResult.refreshed;
 
     if (!mounted) return;
 
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, _, _) =>
-            isAuthenticated ? const ChatsScreen() : const SignupScreen(),
+        pageBuilder: (_, _, _) {
+          if (refreshResult is Authenticated) return const ChatsScreen();
+          if (refreshResult is VerificationRequired) {
+            return VerifyEmailScreen(
+              email: refreshResult.email,
+              delivery: refreshResult.delivery ?? 'sent',
+              login: refreshResult.login,
+            );
+          }
+          return const SignupScreen();
+        },
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),

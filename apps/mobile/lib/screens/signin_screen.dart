@@ -2,19 +2,25 @@ import 'package:chatly/screens/chats_screen.dart';
 
 import '../services/auth_service.dart';
 import 'package:flutter/material.dart';
+import 'verify_email_screen.dart';
 
 class SigninScreen extends StatefulWidget {
-  const SigninScreen({super.key});
+  const SigninScreen({super.key, this.initialLogin, this.authService});
+
+  final String? initialLogin;
+  final AuthService? authService;
 
   @override
   State<SigninScreen> createState() => _SigninScreenState();
 }
 
 class _SigninScreenState extends State<SigninScreen> {
-  final _loginController = TextEditingController();
+  late final _loginController = TextEditingController(
+    text: widget.initialLogin,
+  );
   final _passwordController = TextEditingController();
 
-  final _authService = AuthService();
+  late final AuthService _authService = widget.authService ?? AuthService();
 
   bool _isLoading = false;
   String? _errorText;
@@ -42,7 +48,7 @@ class _SigninScreenState extends State<SigninScreen> {
       _errorText = null;
     });
 
-    final success = await _authService.signin(login: login, password: password);
+    final result = await _authService.signin(login: login, password: password);
 
     if (!mounted) return;
 
@@ -50,18 +56,29 @@ class _SigninScreenState extends State<SigninScreen> {
       _isLoading = false;
     });
 
-    if (!success) {
+    if (result is AuthenticationFailed) {
       setState(() {
         _errorText = 'Failed to sign in';
       });
       return;
     }
 
-    Navigator
-      .of(context)
-      .pushReplacement(
-        MaterialPageRoute(builder: (_) => const ChatsScreen())
+    if (result is VerificationRequired) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => VerifyEmailScreen(
+            email: result.email,
+            delivery: result.delivery ?? 'sent',
+            login: result.login,
+          ),
+        ),
       );
+      return;
+    }
+
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const ChatsScreen()));
   }
 
   @override
@@ -91,10 +108,7 @@ class _SigninScreenState extends State<SigninScreen> {
             ),
             if (_errorText != null) ...[
               const SizedBox(height: 16),
-              Text(
-                _errorText!,
-                style: const TextStyle(color: Colors.red),
-              ),
+              Text(_errorText!, style: const TextStyle(color: Colors.red)),
             ],
             const SizedBox(height: 24),
             SizedBox(

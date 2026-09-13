@@ -100,11 +100,16 @@ class ApiService {
 
     final refreshResult = await _authService.refreshSession();
 
-    if (refreshResult == RefreshSessionResult.unauthorized) {
+    if (refreshResult is VerificationRequired) {
+      AppNavigation.showVerification(
+        email: refreshResult.email,
+        login: refreshResult.login,
+      );
+    } else if (refreshResult is AuthenticationFailed) {
       AppNavigation.showSignup();
     }
 
-    if (refreshResult != RefreshSessionResult.refreshed) {
+    if (refreshResult is! Authenticated) {
       return response;
     }
 

@@ -20,13 +20,43 @@ export const friendshipStatusEnum = pgEnum('friendships_status_enum', [
   'rejected',
 ]);
 
-export const users = pgTable('users', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  login: varchar('login').notNull().unique(),
-  passwordHash: varchar('passwordHash').notNull(),
-  createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt', { mode: 'date' }).defaultNow().notNull(),
-});
+export const users = pgTable(
+  'users',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    login: varchar('login').notNull().unique(),
+    email: varchar('email'),
+    isVerified: boolean('isVerified').default(false).notNull(),
+    passwordHash: varchar('passwordHash').notNull(),
+    createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('users_email_lower_unique_idx')
+      .on(sql`lower(${table.email})`)
+      .where(sql`${table.email} is not null`),
+  ],
+);
+
+export const emailVerificationTokens = pgTable(
+  'email_verification_tokens',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    tokenDigest: varchar('tokenDigest').notNull().unique(),
+    userId: uuid('userId')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expiresAt', { mode: 'date' }).notNull(),
+    createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
+    usedAt: timestamp('usedAt', { mode: 'date' }),
+  },
+  (table) => [
+    uniqueIndex('email_verification_tokens_user_created_idx').on(
+      table.userId,
+      table.createdAt,
+    ),
+  ],
+);
 
 export const refreshTokens = pgTable(
   'refresh_tokens',

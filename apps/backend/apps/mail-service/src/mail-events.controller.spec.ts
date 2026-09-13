@@ -9,9 +9,11 @@ describe('MailEventsController', () => {
   const event: MailSendEvent = {
     eventId: 'event-1',
     to: 'recipient@example.com',
-    template: 'welcome',
-    subject: 'Welcome',
-    context: { displayName: 'Recipient' },
+    template: 'email-verification',
+    subject: 'Confirm email',
+    context: {
+      verificationUrl: 'https://chatly.test/verify-email?token=token',
+    },
   };
 
   let process: jest.MockedFunction<MailService['process']>;
@@ -43,6 +45,22 @@ describe('MailEventsController', () => {
 
   it('dead-letters an invalid event without processing it', async () => {
     await controller.handleMailSend({ eventId: 'event-1' }, context);
+
+    expect(process).not.toHaveBeenCalled();
+    expect(ack).not.toHaveBeenCalled();
+    expect(nack).toHaveBeenCalledWith(message, false, false);
+  });
+
+  it('dead-letters a verification event without its required URL', async () => {
+    await controller.handleMailSend(
+      {
+        eventId: 'event-2',
+        to: 'recipient@example.com',
+        template: 'email-verification',
+        context: {},
+      },
+      context,
+    );
 
     expect(process).not.toHaveBeenCalled();
     expect(ack).not.toHaveBeenCalled();

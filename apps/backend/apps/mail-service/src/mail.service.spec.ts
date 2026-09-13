@@ -50,9 +50,28 @@ describe('MailService', () => {
     );
   });
 
+  it('sends an email verification link with a safe HTML href', async () => {
+    await service.process({
+      eventId: 'event-2',
+      to: 'recipient@example.com',
+      template: 'email-verification',
+      context: {
+        verificationUrl: 'https://chatly.test/auth/verify-email?token=abc',
+      },
+    });
+
+    expect(sendMail).toHaveBeenCalledWith({
+      from: 'sender@example.com',
+      to: 'recipient@example.com',
+      subject: 'Confirm your Chatly email',
+      text: 'Confirm your email address: https://chatly.test/auth/verify-email?token=abc',
+      html: '<p>Confirm your email address:</p><p><a href="https://chatly.test/auth/verify-email?token=abc">Confirm email</a></p>',
+    });
+  });
+
   it('rejects unsupported templates without sending mail', async () => {
     await expect(
-      service.process({ ...event, template: 'unknown' }),
+      service.process({ ...event, template: 'unknown' } as never),
     ).rejects.toThrow('Unsupported mail template: unknown');
     expect(sendMail).not.toHaveBeenCalled();
   });

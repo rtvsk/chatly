@@ -5,6 +5,7 @@ import 'package:chatly/models/chat.dart';
 import 'package:chatly/models/contact.dart';
 import 'package:chatly/models/friend_request.dart';
 import 'package:chatly/screens/chats_screen.dart';
+import 'package:chatly/screens/signin_screen.dart';
 import 'package:chatly/services/avatar_service.dart';
 import 'package:chatly/services/chats_service.dart';
 import 'package:chatly/services/contacts_service.dart';
@@ -166,5 +167,46 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(friendsService.incomingRequestsCalls, 2);
+  });
+
+  testWidgets('signs out from profile and clears the navigation stack', (
+    tester,
+  ) async {
+    final realtime = FakeChatRealtime();
+    var clearSessionCalls = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatsScreen(
+          realtimeService: realtime,
+          contactsService: _EmptyContactsService(),
+          chatsService: _EmptyChatsService(),
+          friendsService: _EmptyFriendsService(),
+          avatarService: _EmptyAvatarService(),
+          userLoginLoader: () async => 'me',
+          sessionClearer: () async => clearSessionCalls++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final appBar = tester.widget<SliverAppBar>(find.byType(SliverAppBar));
+    expect(appBar.automaticallyImplyLeading, isFalse);
+    expect(appBar.actions, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-Profile')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('profile-sign-out')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-sign-out')));
+    await tester.pumpAndSettle();
+
+    expect(clearSessionCalls, 1);
+    expect(realtime.disconnectCalls, greaterThanOrEqualTo(1));
+    expect(find.byType(SigninScreen), findsOneWidget);
+    expect(
+      Navigator.of(tester.element(find.byType(SigninScreen))).canPop(),
+      isFalse,
+    );
   });
 }

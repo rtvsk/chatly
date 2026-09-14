@@ -14,6 +14,7 @@ class ProfileTab extends StatelessWidget {
     required this.login,
     required this.onAvatarsChanged,
     required this.onNotificationsChanged,
+    required this.onSignOut,
     required this.friendRequests,
     this.friendsService = const FriendsService(),
     super.key,
@@ -22,6 +23,7 @@ class ProfileTab extends StatelessWidget {
   final String login;
   final Future<void> Function() onAvatarsChanged;
   final Future<void> Function() onNotificationsChanged;
+  final Future<void> Function() onSignOut;
   final FriendRequestsController friendRequests;
   final FriendsService friendsService;
 
@@ -63,6 +65,44 @@ class ProfileTab extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                key: const Key('profile-sign-out'),
+                leading: Icon(
+                  Icons.logout,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  'Sign out',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                onTap: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogContext) => AlertDialog(
+                      title: const Text('Sign out?'),
+                      content: const Text(
+                        'Are you sure you want to sign out of Chatly?',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          key: const Key('confirm-sign-out'),
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(true),
+                          child: const Text('Sign out'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirmed == true) await onSignOut();
+                },
               ),
             ],
           ),

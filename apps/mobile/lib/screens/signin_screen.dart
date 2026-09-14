@@ -76,9 +76,10 @@ class _SigninScreenState extends State<SigninScreen> {
       return;
     }
 
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => const ChatsScreen()));
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const ChatsScreen()),
+      (_) => false,
+    );
   }
 
   @override

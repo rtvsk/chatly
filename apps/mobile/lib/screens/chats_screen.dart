@@ -16,7 +16,7 @@ import '../services/friends_service.dart';
 import '../storage/token_storage.dart';
 import '../widgets/chatly_bottom_navigation_bar.dart';
 import './profile_screen.dart';
-import './signup_screen.dart';
+import './signin_screen.dart';
 import './chat_screen.dart';
 import './user_profile_screen.dart';
 
@@ -29,6 +29,7 @@ class ChatsScreen extends StatefulWidget {
     this.friendsService = const FriendsService(),
     this.avatarService = const AvatarService(),
     this.userLoginLoader,
+    this.sessionClearer,
   });
 
   final ChatRealtime? realtimeService;
@@ -37,6 +38,7 @@ class ChatsScreen extends StatefulWidget {
   final FriendsService friendsService;
   final AvatarService avatarService;
   final Future<String?> Function()? userLoginLoader;
+  final Future<void> Function()? sessionClearer;
   @override
   State<ChatsScreen> createState() => _ChatsScreenState();
 }
@@ -158,13 +160,14 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
 
   Future<void> _logout() async {
     _realtimeService.disconnect();
-    await TokenStorage.instance.clearSession();
+    await (widget.sessionClearer ?? TokenStorage.instance.clearSession).call();
 
     if (!mounted) return;
 
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => const SignupScreen()));
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SigninScreen()),
+      (_) => false,
+    );
   }
 
   @override
@@ -189,6 +192,7 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
         friendRequests: _friendRequests,
         onAvatarsChanged: _refreshCurrentAvatar,
         onNotificationsChanged: _refreshFriendshipLists,
+        onSignOut: _logout,
       ),
     ];
 
@@ -197,6 +201,7 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
         slivers: [
           SliverAppBar(
             pinned: true,
+            automaticallyImplyLeading: false,
             // expandedHeight: 160,
             title: Row(
               children: [
@@ -220,9 +225,6 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
-            actions: [
-              IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
-            ],
             // flexibleSpace: LayoutBuilder(
             //   builder: (context, constraints) {
             //     final collapsed =

@@ -36,6 +36,29 @@ class _EmptyChatsService extends ChatsService {
   }
 }
 
+class _UnreadChatsService extends _EmptyChatsService {
+  _UnreadChatsService(this.chats);
+
+  List<ChatSummary> chats;
+
+  @override
+  Future<List<ChatSummary>> getChats() async {
+    getChatsCalls += 1;
+    return chats;
+  }
+}
+
+ChatSummary _unreadChat(int unreadCount) {
+  return ChatSummary(
+    id: 'chat-id',
+    type: 'direct',
+    peer: const Contact(id: 'peer-id', login: 'alice'),
+    createdAt: DateTime.utc(2026, 9, 13, 9),
+    updatedAt: DateTime.utc(2026, 9, 13, 10),
+    unreadCount: unreadCount,
+  );
+}
+
 class _EmptyFriendsService extends FriendsService {
   int incomingRequestsCalls = 0;
 
@@ -168,6 +191,67 @@ void main() {
 
     expect(friendsService.incomingRequestsCalls, 2);
   });
+
+  testWidgets(
+    'updates the Chats badge from realtime summaries outside the Chats tab',
+    (tester) async {
+      final realtime = FakeChatRealtime();
+      final chatsService = _UnreadChatsService([_unreadChat(2)]);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatsScreen(
+            realtimeService: realtime,
+            contactsService: _EmptyContactsService(),
+            chatsService: chatsService,
+            friendsService: _EmptyFriendsService(),
+            avatarService: _EmptyAvatarService(),
+            userLoginLoader: () async => 'me',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<Semantics>(find.byKey(const ValueKey('bottom-nav-Chats')))
+            .properties
+            .label,
+        'Chats, 2 unread messages',
+      );
+
+      chatsService.chats = [_unreadChat(3)];
+      realtime.addMessage(
+        ChatMessage(
+          id: 'message-id',
+          chatId: 'chat-id',
+          senderId: 'peer-id',
+          text: 'New message',
+          createdAt: DateTime.utc(2026, 9, 13, 11),
+          updatedAt: DateTime.utc(2026, 9, 13, 11),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<Semantics>(find.byKey(const ValueKey('bottom-nav-Chats')))
+            .properties
+            .label,
+        'Chats, 3 unread messages',
+      );
+
+      await tester.tap(find.byKey(const ValueKey('bottom-nav-Chats')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Semantics>(find.byKey(const ValueKey('bottom-nav-Chats')))
+            .properties
+            .label,
+        'Chats, 3 unread messages',
+      );
+    },
+  );
 
   testWidgets('signs out from profile and clears the navigation stack', (
     tester,

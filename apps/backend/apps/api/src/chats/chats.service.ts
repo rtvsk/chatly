@@ -37,6 +37,7 @@ export type ChatSummary = {
     avatarUrl: string | null;
   };
   lastMessage: ChatMessage | null;
+  unreadCount: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -52,6 +53,7 @@ type ChatSummaryRow = {
   lastMessageText: string | null;
   lastMessageCreatedAt: Date | null;
   lastMessageUpdatedAt: Date | null;
+  unreadCount: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -60,6 +62,10 @@ const currentParticipant = alias(chatParticipants, 'current_chat_participant');
 const peerParticipant = alias(chatParticipants, 'peer_chat_participant');
 const peerUser = alias(users, 'chat_peer');
 const peerAvatar = alias(avatars, 'chat_peer_avatar');
+const unreadMessage = alias(messages, 'unread_chat_message');
+const lastReadMessage = alias(messages, 'last_read_chat_message');
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class ChatsService {
@@ -81,6 +87,7 @@ export class ChatsService {
         lastMessageText: messages.text,
         lastMessageCreatedAt: messages.createdAt,
         lastMessageUpdatedAt: messages.updatedAt,
+        unreadCount: this.unreadCountSql(userId),
         createdAt: chats.createdAt,
         updatedAt: chats.updatedAt,
       })
@@ -291,6 +298,75 @@ export class ChatsService {
     return message;
   }
 
+  async markRead(
+    userId: string,
+    chatId: string,
+    messageId: unknown,
+  ): Promise<void> {
+    if (typeof messageId !== 'string' || !uuidPattern.test(messageId)) {
+      throw new BadRequestException('A valid message ID is required');
+    }
+
+    await this.database.db.transaction(async (tx) => {
+      await this.assertParticipant(tx, userId, chatId, true);
+
+      const [participant] = await tx
+        .select({ lastReadMessageId: chatParticipants.lastReadMessageId })
+        .from(chatParticipants)
+        .where(
+          and(
+            eq(chatParticipants.chatId, chatId),
+            eq(chatParticipants.userId, userId),
+          ),
+        )
+        .for('update')
+        .limit(1);
+
+      if (!participant) {
+        throw new NotFoundException('Chat not found');
+      }
+
+      const [targetMessage] = await tx
+        .select({ id: messages.id, createdAt: messages.createdAt })
+        .from(messages)
+        .where(and(eq(messages.id, messageId), eq(messages.chatId, chatId)))
+        .limit(1);
+
+      if (!targetMessage) {
+        throw new NotFoundException('Message not found');
+      }
+
+      let currentMessage: Pick<ChatMessage, 'id' | 'createdAt'> | undefined;
+      if (participant.lastReadMessageId) {
+        [currentMessage] = await tx
+          .select({ id: messages.id, createdAt: messages.createdAt })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.id, participant.lastReadMessageId),
+              eq(messages.chatId, chatId),
+            ),
+          )
+          .limit(1);
+      }
+
+      if (
+        !currentMessage ||
+        this.isMessageAfter(targetMessage, currentMessage)
+      ) {
+        await tx
+          .update(chatParticipants)
+          .set({ lastReadMessageId: targetMessage.id })
+          .where(
+            and(
+              eq(chatParticipants.chatId, chatId),
+              eq(chatParticipants.userId, userId),
+            ),
+          );
+      }
+    });
+  }
+
   private assertNotSelf(userId: string, peerId: string): void {
     if (userId === peerId) {
       throw new BadRequestException('You cannot create a chat with yourself');
@@ -376,6 +452,7 @@ export class ChatsService {
         lastMessageText: messages.text,
         lastMessageCreatedAt: messages.createdAt,
         lastMessageUpdatedAt: messages.updatedAt,
+        unreadCount: this.unreadCountSql(userId),
         createdAt: chats.createdAt,
         updatedAt: chats.updatedAt,
       })
@@ -461,8 +538,39 @@ export class ChatsService {
             updatedAt: row.lastMessageUpdatedAt!,
           }
         : null,
+      unreadCount: row.unreadCount,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
+  }
+
+  private unreadCountSql(userId: string) {
+    return sql<number>`(
+      select count(*)::int
+      from ${messages} as ${unreadMessage}
+      left join ${messages} as ${lastReadMessage}
+        on ${currentParticipant.lastReadMessageId} = cast(${lastReadMessage.id} as text)
+      where ${unreadMessage.chatId} = ${chats.id}
+        and ${unreadMessage.senderId} <> ${userId}
+        and (
+          ${lastReadMessage.id} is null
+          or ${unreadMessage.createdAt} > ${lastReadMessage.createdAt}
+          or (
+            ${unreadMessage.createdAt} = ${lastReadMessage.createdAt}
+            and ${unreadMessage.id} > ${lastReadMessage.id}
+          )
+        )
+    )`;
+  }
+
+  private isMessageAfter(
+    candidate: Pick<ChatMessage, 'id' | 'createdAt'>,
+    reference: Pick<ChatMessage, 'id' | 'createdAt'>,
+  ): boolean {
+    return (
+      candidate.createdAt > reference.createdAt ||
+      (candidate.createdAt.getTime() === reference.createdAt.getTime() &&
+        candidate.id > reference.id)
+    );
   }
 }

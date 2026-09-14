@@ -5,9 +5,11 @@ class ChatlyBottomNavigationBar extends StatelessWidget {
     required this.selectedIndex,
     required this.onDestinationSelected,
     this.profileBadgeCount = 0,
+    this.chatBadgeCount = 0,
     super.key,
   }) : assert(selectedIndex >= 0 && selectedIndex < _destinations.length),
-       assert(profileBadgeCount >= 0);
+       assert(profileBadgeCount >= 0),
+       assert(chatBadgeCount >= 0);
 
   static const _animationDuration = Duration(milliseconds: 220);
   static const _destinations = [
@@ -31,6 +33,7 @@ class ChatlyBottomNavigationBar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
   final int profileBadgeCount;
+  final int chatBadgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +67,14 @@ class ChatlyBottomNavigationBar extends StatelessWidget {
                     child: _ChatlyNavigationButton(
                       destination: _destinations[index],
                       isSelected: selectedIndex == index,
-                      badgeCount: index == 2 ? profileBadgeCount : 0,
+                      badgeCount: switch (index) {
+                        1 => chatBadgeCount,
+                        2 => profileBadgeCount,
+                        _ => 0,
+                      },
+                      badgeSemanticLabel: index == 1
+                          ? 'unread messages'
+                          : 'notifications',
                       onTap: () => onDestinationSelected(index),
                     ),
                   ),
@@ -82,12 +92,14 @@ class _ChatlyNavigationButton extends StatelessWidget {
     required this.destination,
     required this.isSelected,
     required this.badgeCount,
+    required this.badgeSemanticLabel,
     required this.onTap,
   });
 
   final _ChatlyNavigationDestination destination;
   final bool isSelected;
   final int badgeCount;
+  final String badgeSemanticLabel;
   final VoidCallback onTap;
 
   @override
@@ -99,7 +111,7 @@ class _ChatlyNavigationButton extends StatelessWidget {
       button: true,
       selected: isSelected,
       label: badgeCount > 0
-          ? '${destination.label}, $badgeCount notifications'
+          ? '${destination.label}, $badgeCount $badgeSemanticLabel'
           : destination.label,
       onTap: onTap,
       child: ExcludeSemantics(

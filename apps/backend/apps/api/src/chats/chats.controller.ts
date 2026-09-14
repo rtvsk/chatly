@@ -2,7 +2,10 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -24,6 +27,10 @@ type CreateMessageBody = {
   text?: unknown;
 };
 
+type MarkReadBody = {
+  messageId?: unknown;
+};
+
 @Controller('chats')
 @UseGuards(JwtAuthGuard)
 export class ChatsController {
@@ -39,7 +46,9 @@ export class ChatsController {
     @Req() req: RequestWithUser,
     @Param('userId') userId: string,
   ) {
-    return { chat: await this.chatsService.getDirectChat(req.user.sub, userId) };
+    return {
+      chat: await this.chatsService.getDirectChat(req.user.sub, userId),
+    };
   }
 
   @Post('direct/:userId')
@@ -72,5 +81,15 @@ export class ChatsController {
     @Body() body: CreateMessageBody,
   ) {
     return this.chatsService.sendMessage(req.user.sub, chatId, body?.text);
+  }
+
+  @Patch(':chatId/read')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  markRead(
+    @Req() req: RequestWithUser,
+    @Param('chatId') chatId: string,
+    @Body() body: MarkReadBody,
+  ) {
+    return this.chatsService.markRead(req.user.sub, chatId, body?.messageId);
   }
 }

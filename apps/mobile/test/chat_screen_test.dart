@@ -8,11 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'chat_realtime_test_support.dart';
 
 class FakeChatsService extends ChatsService {
-  FakeChatsService({this.messages = const []});
+  FakeChatsService({this.messages = const [], this.markReadFails = false});
 
   List<ChatMessage> messages;
   String? sentText;
   final List<String?> afterCalls = [];
+  final List<String> markedReadMessageIds = [];
+  bool markReadFails;
 
   @override
   Future<List<ChatMessage>> getMessages(String chatId, {String? after}) async {
@@ -32,6 +34,12 @@ class FakeChatsService extends ChatsService {
       updatedAt: DateTime.utc(2026, 9, 13, 11),
     );
   }
+
+  @override
+  Future<void> markRead(String chatId, String messageId) async {
+    markedReadMessageIds.add(messageId);
+    if (markReadFails) throw Exception('failed');
+  }
 }
 
 final _chat = ChatSummary(
@@ -40,6 +48,7 @@ final _chat = ChatSummary(
   peer: const Contact(id: 'peer-id', login: 'alice'),
   createdAt: DateTime.utc(2026, 9, 13, 9),
   updatedAt: DateTime.utc(2026, 9, 13, 10),
+  unreadCount: 0,
 );
 
 void main() {
@@ -143,9 +152,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Realtime message'), findsOneWidget);
 
+    service.messages = const [];
     realtime.signalConnected();
     await tester.pumpAndSettle();
     expect(service.afterCalls.last, 'realtime-id');
+    expect(service.markedReadMessageIds, ['initial-id', 'realtime-id']);
+  });
+
+  testWidgets('keeps loaded messages visible when marking them read fails', (
+    tester,
+  ) async {
+    final service = FakeChatsService(
+      markReadFails: true,
+      messages: [
+        ChatMessage(
+          id: 'peer-message',
+          chatId: 'chat-id',
+          senderId: 'peer-id',
+          text: 'Hello',
+          createdAt: DateTime.utc(2026, 9, 13, 10),
+          updatedAt: DateTime.utc(2026, 9, 13, 10),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(chat: _chat, chatsService: service),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hello'), findsOneWidget);
+    expect(service.markedReadMessageIds, ['peer-message']);
   });
 
   testWidgets('shows and clears the peer online status from presence updates', (

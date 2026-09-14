@@ -54,6 +54,7 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
   String? login;
   Avatar? currentAvatar;
   int currentIndex = 0;
+  int _chatUnreadCount = 0;
 
   @override
   void initState() {
@@ -185,6 +186,11 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
         key: _chatsKey,
         chatsService: widget.chatsService,
         realtimeService: _realtimeService,
+        onUnreadCountChanged: (count) {
+          if (_chatUnreadCount != count) {
+            setState(() => _chatUnreadCount = count);
+          }
+        },
       ),
       ProfileTab(
         login: userLogin,
@@ -268,6 +274,7 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
         listenable: _friendRequests,
         builder: (context, _) => ChatlyBottomNavigationBar(
           selectedIndex: currentIndex,
+          chatBadgeCount: _chatUnreadCount,
           profileBadgeCount: _friendRequests.requests.length,
           onDestinationSelected: (index) {
             setState(() {
@@ -555,10 +562,12 @@ class ChatsTab extends StatefulWidget {
     super.key,
     this.chatsService = const ChatsService(),
     this.realtimeService,
+    this.onUnreadCountChanged,
   });
 
   final ChatsService chatsService;
   final ChatRealtime? realtimeService;
+  final ValueChanged<int>? onUnreadCountChanged;
 
   @override
   State<ChatsTab> createState() => _ChatsTabState();
@@ -602,6 +611,9 @@ class _ChatsTabState extends State<ChatsTab> {
         _chats = chats;
         _isLoading = false;
       });
+      widget.onUnreadCountChanged?.call(
+        chats.fold<int>(0, (total, chat) => total + chat.unreadCount),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -658,8 +670,11 @@ class _ChatsTabState extends State<ChatsTab> {
           onTap: () async {
             await Navigator.of(context).push<void>(
               MaterialPageRoute(
-                builder: (_) =>
-                    ChatScreen(chat: chat, realtimeService: _realtimeService),
+                builder: (_) => ChatScreen(
+                  chat: chat,
+                  chatsService: widget.chatsService,
+                  realtimeService: _realtimeService,
+                ),
               ),
             );
             if (mounted) await _loadChats();

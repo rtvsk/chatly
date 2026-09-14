@@ -7,6 +7,7 @@ class ChatSummary {
     required this.peer,
     required this.createdAt,
     required this.updatedAt,
+    required this.unreadCount,
     this.lastMessage,
   });
 
@@ -16,6 +17,7 @@ class ChatSummary {
   final ChatMessage? lastMessage;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final int unreadCount;
 
   factory ChatSummary.fromJson(Map<String, dynamic> json) {
     return ChatSummary(
@@ -27,6 +29,7 @@ class ChatSummary {
           : ChatMessage.fromJson(json['lastMessage'] as Map<String, dynamic>),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      unreadCount: json['unreadCount'] as int,
     );
   }
 }

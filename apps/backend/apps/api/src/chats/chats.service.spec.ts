@@ -1,3 +1,5 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
+
 import { DatabaseService } from '../database/database.service';
 import { ChatsGateway } from './chats.gateway';
 import { ChatsService } from './chats.service';
@@ -26,14 +28,16 @@ describe('ChatsService', () => {
           lastMessageText: null,
           lastMessageCreatedAt: null,
           lastMessageUpdatedAt: null,
+          unreadCount: 0,
           createdAt,
           updatedAt: createdAt,
         },
       ]),
     };
+    const select = jest.fn().mockReturnValue(builder);
     const service = new ChatsService(
       {
-        db: { select: jest.fn().mockReturnValue(builder) },
+        db: { select },
       } as unknown as DatabaseService,
       gateway,
     );
@@ -48,10 +52,29 @@ describe('ChatsService', () => {
           avatarUrl: '/avatars/avatar-id/file',
         },
         lastMessage: null,
+        unreadCount: 0,
         createdAt,
         updatedAt: createdAt,
       },
     ]);
+
+    const unreadCount = select.mock.calls[0][0].unreadCount;
+    const query = new PgDialect().sqlToQuery(unreadCount);
+    expect(query.sql).toContain(
+      'from "messages" as "unread_chat_message"',
+    );
+    expect(query.sql).toContain(
+      'left join "messages" as "last_read_chat_message"',
+    );
+    expect(query.sql).toContain('"unread_chat_message"."senderId" <> $1');
+    expect(query.sql).toContain('"last_read_chat_message"."id" is null');
+    expect(query.sql).toContain(
+      '"unread_chat_message"."createdAt" > "last_read_chat_message"."createdAt"',
+    );
+    expect(query.sql).toContain(
+      '"unread_chat_message"."id" > "last_read_chat_message"."id"',
+    );
+    expect(query.params).toEqual(['current-user']);
   });
 
   it('trims a message and atomically updates its chat', async () => {
@@ -219,4 +242,141 @@ describe('ChatsService', () => {
     ).rejects.toThrow('database error');
     expect(publishMessageCreated).not.toHaveBeenCalled();
   });
+
+  it('marks a valid message as read for a participant', async () => {
+    const newer = new Date('2026-09-13T10:01:00.000Z');
+    const participantLockQuery = participantQuery([{ id: 'chat-id' }]);
+    const readCursorQuery = participantQuery([{ lastReadMessageId: null }]);
+    const targetMessageQuery = messageQuery([
+      { id: '11111111-1111-1111-1111-111111111111', createdAt: newer },
+    ]);
+    const update = {
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue(undefined),
+    };
+    const tx = {
+      select: jest
+        .fn()
+        .mockReturnValueOnce(participantLockQuery)
+        .mockReturnValueOnce(readCursorQuery)
+        .mockReturnValueOnce(targetMessageQuery),
+      update: jest.fn().mockReturnValue(update),
+    };
+    const service = serviceWithTransaction(tx, gateway);
+
+    await expect(
+      service.markRead(
+        'current-user',
+        'chat-id',
+        '11111111-1111-1111-1111-111111111111',
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(readCursorQuery.for).toHaveBeenCalledWith('update');
+    expect(update.set).toHaveBeenCalledWith({
+      lastReadMessageId: '11111111-1111-1111-1111-111111111111',
+    });
+  });
+
+  it('does not rewind an existing read cursor', async () => {
+    const cursorTime = new Date('2026-09-13T10:01:00.000Z');
+    const olderTime = new Date('2026-09-13T10:00:00.000Z');
+    const participantLockQuery = participantQuery([{ id: 'chat-id' }]);
+    const readCursorQuery = participantQuery([
+      { lastReadMessageId: '22222222-2222-2222-2222-222222222222' },
+    ]);
+    const targetMessageQuery = messageQuery([
+      { id: '11111111-1111-1111-1111-111111111111', createdAt: olderTime },
+    ]);
+    const currentMessageQuery = messageQuery([
+      { id: '22222222-2222-2222-2222-222222222222', createdAt: cursorTime },
+    ]);
+    const tx = {
+      select: jest
+        .fn()
+        .mockReturnValueOnce(participantLockQuery)
+        .mockReturnValueOnce(readCursorQuery)
+        .mockReturnValueOnce(targetMessageQuery)
+        .mockReturnValueOnce(currentMessageQuery),
+      update: jest.fn(),
+    };
+    const service = serviceWithTransaction(tx, gateway);
+
+    await service.markRead(
+      'current-user',
+      'chat-id',
+      '11111111-1111-1111-1111-111111111111',
+    );
+
+    expect(tx.update).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'not-a-uuid', 1])(
+    'rejects an invalid read message ID',
+    async (messageId) => {
+      const transaction = jest.fn();
+      const service = new ChatsService(
+        { db: { transaction } } as unknown as DatabaseService,
+        gateway,
+      );
+
+      await expect(
+        service.markRead('current-user', 'chat-id', messageId),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it('hides read targets outside the participant chat', async () => {
+    const participantLockQuery = participantQuery([{ id: 'chat-id' }]);
+    const readCursorQuery = participantQuery([{ lastReadMessageId: null }]);
+    const targetMessageQuery = messageQuery([]);
+    const tx = {
+      select: jest
+        .fn()
+        .mockReturnValueOnce(participantLockQuery)
+        .mockReturnValueOnce(readCursorQuery)
+        .mockReturnValueOnce(targetMessageQuery),
+      update: jest.fn(),
+    };
+    const service = serviceWithTransaction(tx, gateway);
+
+    await expect(
+      service.markRead(
+        'current-user',
+        'chat-id',
+        '11111111-1111-1111-1111-111111111111',
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+  });
 });
+
+function participantQuery(rows: unknown[]) {
+  return {
+    from: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    for: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue(rows),
+  };
+}
+
+function messageQuery(rows: unknown[]) {
+  return {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue(rows),
+  };
+}
+
+function serviceWithTransaction(
+  tx: object,
+  gateway: ChatsGateway,
+): ChatsService {
+  return new ChatsService(
+    {
+      db: { transaction: jest.fn(async (callback) => callback(tx)) },
+    } as unknown as DatabaseService,
+    gateway,
+  );
+}

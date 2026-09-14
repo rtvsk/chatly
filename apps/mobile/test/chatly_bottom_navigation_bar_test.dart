@@ -6,12 +6,14 @@ void main() {
   Widget buildSubject({
     required int selectedIndex,
     int profileBadgeCount = 0,
+    int chatBadgeCount = 0,
     ValueChanged<int>? onDestinationSelected,
   }) {
     return MaterialApp(
       home: Scaffold(
         bottomNavigationBar: ChatlyBottomNavigationBar(
           selectedIndex: selectedIndex,
+          chatBadgeCount: chatBadgeCount,
           profileBadgeCount: profileBadgeCount,
           onDestinationSelected: onDestinationSelected ?? (_) {},
         ),
@@ -79,6 +81,34 @@ void main() {
     expect(find.text('3'), findsOneWidget);
     final badge = tester.widget<Badge>(find.byType(Badge).last);
     expect(badge.backgroundColor, Colors.red);
+  });
+
+  testWidgets('shows unread messages on Chats with an accessible label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildSubject(selectedIndex: 0, chatBadgeCount: 12));
+
+    expect(find.text('12'), findsOneWidget);
+    final chatsTab = tester.widget<Semantics>(
+      find.byKey(const ValueKey('bottom-nav-Chats')),
+    );
+    expect(chatsTab.properties.label, 'Chats, 12 unread messages');
+    final badge = tester.widget<Badge>(find.byKey(const ValueKey('false-12')));
+    expect(badge.backgroundColor, Colors.red);
+  });
+
+  testWidgets('does not show a Chats badge when there are no unread messages', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildSubject(selectedIndex: 1));
+
+    final chatsTab = tester.widget<Semantics>(
+      find.byKey(const ValueKey('bottom-nav-Chats')),
+    );
+    expect(chatsTab.properties.label, 'Chats');
+    final badge = tester.widget<Badge>(find.byKey(const ValueKey('true-0')));
+    expect(badge.isLabelVisible, isFalse);
+    expect(find.text('0'), findsNothing);
   });
 
   testWidgets('keeps hidden destinations accessible', (tester) async {

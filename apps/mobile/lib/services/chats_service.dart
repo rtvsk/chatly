@@ -63,6 +63,14 @@ class ChatsService {
     );
   }
 
+  Future<void> markRead(String chatId, String messageId) async {
+    final response = await ApiService.instance.patch(
+      '/chats/$chatId/read',
+      body: {'messageId': messageId},
+    );
+    _requireSuccess(response.statusCode);
+  }
+
   void _requireSuccess(int statusCode) {
     if (statusCode < 200 || statusCode >= 300) {
       throw Exception('Chat request failed ($statusCode)');

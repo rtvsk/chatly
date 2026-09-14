@@ -17,12 +17,14 @@ void main() {
       },
       'createdAt': '2026-09-13T09:00:00.000Z',
       'updatedAt': '2026-09-13T10:00:00.000Z',
+      'unreadCount': 2,
     });
 
     expect(chat.type, 'direct');
     expect(chat.peer.login, 'alice');
     expect(chat.lastMessage?.text, 'Hello');
     expect(chat.lastMessage?.createdAt, DateTime.utc(2026, 9, 13, 10));
+    expect(chat.unreadCount, 2);
   });
 
   test('parses messages returned after the current cursor', () {

@@ -22,6 +22,13 @@
       "when": 1789217946156,
       "tag": "0002_sweet_winter_soldier",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789300000000,
+      "tag": "0003_mark_existing_chat_messages_read",
+      "breakpoints": true
     }
   ]
 }

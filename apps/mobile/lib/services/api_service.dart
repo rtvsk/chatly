@@ -32,11 +32,12 @@ class ApiService {
     );
   }
 
-  Future<http.Response> patch(String path) {
+  Future<http.Response> patch(String path, {Object? body}) {
     return _sendWithRefresh(
       () => http.patch(
         Uri.parse('${Constants.baseUrl}$path'),
         headers: _headers(),
+        body: body == null ? null : jsonEncode(body),
       ),
     );
   }

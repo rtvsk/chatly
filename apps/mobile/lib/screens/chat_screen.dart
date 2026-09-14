@@ -96,6 +96,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {});
       _scrollToBottom();
     }
+    if (added) _markLatestMessageRead();
   }
 
   void _onTypingChanged(TypingChangedEvent event) {
@@ -173,6 +174,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _initialError = null;
       });
       if (initial || added) _scrollToBottom();
+      if (incoming.isNotEmpty) _markLatestMessageRead();
     } catch (_) {
       if (!mounted) return;
       if (initial) {
@@ -206,6 +208,19 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     }
     return added;
+  }
+
+  void _markLatestMessageRead() {
+    if (_messages.isEmpty) return;
+    unawaited(_markRead(_messages.last.id));
+  }
+
+  Future<void> _markRead(String messageId) async {
+    try {
+      await widget.chatsService.markRead(widget.chat.id, messageId);
+    } catch (_) {
+      // A read-receipt failure must not hide messages that loaded successfully.
+    }
   }
 
   void _scrollToBottom() {

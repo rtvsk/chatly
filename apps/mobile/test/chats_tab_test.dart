@@ -22,7 +22,7 @@ class FakeChatsService extends ChatsService {
   }
 }
 
-ChatSummary _chat({ChatMessage? lastMessage}) {
+ChatSummary _chat({ChatMessage? lastMessage, int unreadCount = 0}) {
   return ChatSummary(
     id: 'chat-id',
     type: 'direct',
@@ -30,6 +30,7 @@ ChatSummary _chat({ChatMessage? lastMessage}) {
     lastMessage: lastMessage,
     createdAt: DateTime.utc(2026, 9, 13, 9),
     updatedAt: DateTime.utc(2026, 9, 13, 10),
+    unreadCount: unreadCount,
   );
 }
 
@@ -98,6 +99,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(service.calls, 2);
+  });
+
+  testWidgets('reports the sum of unread chats after every successful reload', (
+    tester,
+  ) async {
+    final service = FakeChatsService(
+      chats: [_chat(unreadCount: 2), _chat(unreadCount: 3)],
+    );
+    final unreadCounts = <int>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatsTab(
+            chatsService: service,
+            onUnreadCountChanged: unreadCounts.add,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(unreadCounts, [5]);
   });
 
   testWidgets('cancels the realtime subscription when disposed', (

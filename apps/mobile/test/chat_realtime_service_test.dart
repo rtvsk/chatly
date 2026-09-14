@@ -43,6 +43,9 @@ class _TestSocket extends io.Socket {
   void emit(String event, [dynamic data]) {
     emittedEvents.add(event);
     emittedPayloads.add(data);
+    notifyOutgoingListeners({
+      'data': data == null ? [event] : [event, data],
+    });
   }
 
   void triggerConnect() {
@@ -121,6 +124,21 @@ void main() {
     await subscription.cancel();
   });
 
+  test('handles outgoing events without a payload', () async {
+    final socket = _TestSocket();
+    final realtime = ChatRealtimeService(
+      accessToken: () => 'access-token',
+      socketFactory: (_, _) => socket,
+    );
+
+    await realtime.connect();
+    socket.connected = true;
+
+    expect(realtime.refreshPresence, returnsNormally);
+    expect(socket.emittedEvents, ['presence.get']);
+    expect(socket.emittedPayloads, [isNull]);
+  });
+
   test(
     'clears and emits empty presence on socket loss and explicit disconnect',
     () async {
@@ -196,4 +214,26 @@ void main() {
       await subscription.cancel();
     },
   );
+
+  test('publishes only validated friendship changes', () async {
+    final socket = _TestSocket();
+    final realtime = ChatRealtimeService(
+      accessToken: () => 'access-token',
+      socketFactory: (_, _) => socket,
+    );
+    final changes = <FriendshipChangedEvent>[];
+    final subscription = realtime.friendshipChanges.listen(changes.add);
+
+    await realtime.connect();
+    socket.triggerConnect();
+    socket.triggerEvent('friendship.changed', {'type': 'request_created'});
+    socket.triggerEvent('friendship.changed', {'type': 'unknown'});
+    socket.triggerEvent('friendship.changed', {'type': 7});
+    socket.triggerEvent('friendship.changed', const ['not-a-map']);
+    await _flushEvents();
+
+    expect(changes, hasLength(1));
+    expect(changes.single.type, FriendshipChangeType.requestCreated);
+    await subscription.cancel();
+  });
 }

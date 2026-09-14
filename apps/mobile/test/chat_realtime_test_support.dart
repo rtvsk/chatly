@@ -6,12 +6,16 @@ import 'package:chatly/services/chat_realtime_service.dart';
 class FakeChatRealtime implements ChatRealtime {
   late final StreamController<ChatMessage> _messagesController;
   late final StreamController<TypingChangedEvent> _typingChangesController;
+  late final StreamController<FriendshipChangedEvent>
+  _friendshipChangesController;
   late final StreamController<void> _connectedController;
   late final StreamController<Set<String>> _onlineUserIdsChangesController;
   int messageSubscriptions = 0;
   int messageCancellations = 0;
   int typingChangesSubscriptions = 0;
   int typingChangesCancellations = 0;
+  int friendshipChangesSubscriptions = 0;
+  int friendshipChangesCancellations = 0;
   int connectedSubscriptions = 0;
   int connectedCancellations = 0;
   int onlineUserIdsSubscriptions = 0;
@@ -32,6 +36,11 @@ class FakeChatRealtime implements ChatRealtime {
       onListen: () => typingChangesSubscriptions++,
       onCancel: () => typingChangesCancellations++,
     );
+    _friendshipChangesController =
+        StreamController<FriendshipChangedEvent>.broadcast(
+          onListen: () => friendshipChangesSubscriptions++,
+          onCancel: () => friendshipChangesCancellations++,
+        );
     _connectedController = StreamController<void>.broadcast(
       onListen: () => connectedSubscriptions++,
       onCancel: () => connectedCancellations++,
@@ -48,6 +57,10 @@ class FakeChatRealtime implements ChatRealtime {
   @override
   Stream<TypingChangedEvent> get typingChanges =>
       _typingChangesController.stream;
+
+  @override
+  Stream<FriendshipChangedEvent> get friendshipChanges =>
+      _friendshipChangesController.stream;
 
   @override
   Stream<void> get connected => _connectedController.stream;
@@ -89,6 +102,10 @@ class FakeChatRealtime implements ChatRealtime {
     _typingChangesController.add(
       TypingChangedEvent(userId: userId, isTyping: isTyping),
     );
+  }
+
+  void addFriendshipChanged(FriendshipChangeType type) {
+    _friendshipChangesController.add(FriendshipChangedEvent(type: type));
   }
 
   void applyPresenceSnapshot(Iterable<String> onlineUserIds) {

@@ -1,6 +1,7 @@
 import 'package:chatly/models/friend_request.dart';
 import 'package:chatly/screens/profile_screen.dart';
 import 'package:chatly/services/friends_service.dart';
+import 'package:chatly/services/friend_requests_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -11,12 +12,17 @@ class EmptyFriendsService extends FriendsService {
 
 void main() {
   testWidgets('shows links for avatars and notifications', (tester) async {
+    final friendsService = EmptyFriendsService();
+    final friendRequests = FriendRequestsController(
+      friendsService: friendsService,
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: ProfileTab(
             login: 'current-user',
-            friendsService: EmptyFriendsService(),
+            friendsService: friendsService,
+            friendRequests: friendRequests,
             onAvatarsChanged: () async {},
             onNotificationsChanged: () async {},
           ),
@@ -33,5 +39,6 @@ void main() {
 
     expect(find.widgetWithText(AppBar, 'Notifications'), findsOneWidget);
     expect(find.text('No notifications'), findsOneWidget);
+    friendRequests.dispose();
   });
 }

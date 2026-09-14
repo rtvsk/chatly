@@ -11,6 +11,7 @@ import '../services/avatar_service.dart';
 import '../services/chat_realtime_service.dart';
 import '../services/chats_service.dart';
 import '../services/contacts_service.dart';
+import '../services/friend_requests_controller.dart';
 import '../services/friends_service.dart';
 import '../storage/token_storage.dart';
 import '../widgets/chatly_bottom_navigation_bar.dart';
@@ -44,12 +45,13 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
   late final FriendsService _friendsService;
   final GlobalKey<_ContactsTabState> _contactsKey = GlobalKey();
   final GlobalKey<_ChatsTabState> _chatsKey = GlobalKey();
-  Timer? _notificationsTimer;
   late final ChatRealtime _realtimeService;
+  late final FriendRequestsController _friendRequests;
+  StreamSubscription<void>? _connectedSubscription;
+  StreamSubscription<FriendshipChangedEvent>? _friendshipChangesSubscription;
   String? login;
   Avatar? currentAvatar;
   int currentIndex = 0;
-  int notificationCount = 0;
 
   @override
   void initState() {
@@ -57,19 +59,24 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _realtimeService = widget.realtimeService ?? ChatRealtimeService.instance;
     _friendsService = widget.friendsService;
+    _friendRequests = FriendRequestsController(friendsService: _friendsService);
+    _connectedSubscription = _realtimeService.connected.listen(
+      (_) => unawaited(_syncFriendships()),
+    );
+    _friendshipChangesSubscription = _realtimeService.friendshipChanges.listen(
+      (event) => unawaited(_onFriendshipChanged(event)),
+    );
     unawaited(_realtimeService.connect());
     _loadLogin();
-    _refreshNotifications();
-    _notificationsTimer = Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => _refreshNotifications(),
-    );
+    unawaited(_friendRequests.refresh());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _notificationsTimer?.cancel();
+    _connectedSubscription?.cancel();
+    _friendshipChangesSubscription?.cancel();
+    _friendRequests.dispose();
     _realtimeService.disconnect();
     super.dispose();
   }
@@ -127,21 +134,26 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _refreshNotifications() async {
-    try {
-      final requests = await _friendsService.getIncomingRequests();
-      if (!mounted) return;
-      setState(() => notificationCount = requests.length);
-    } catch (_) {
-      // Keep the authenticated screen usable when notifications fail to load.
+  Future<void> _refreshFriendshipLists() async {
+    await _refreshContactsAndChats();
+  }
+
+  Future<void> _syncFriendships() async {
+    await Future.wait([_friendRequests.refresh(), _refreshContactsAndChats()]);
+  }
+
+  Future<void> _onFriendshipChanged(FriendshipChangedEvent event) async {
+    await _friendRequests.refresh();
+    if (event.type == FriendshipChangeType.requestAccepted ||
+        event.type == FriendshipChangeType.friendRemoved) {
+      await _refreshContactsAndChats();
     }
   }
 
-  Future<void> _refreshFriendships() async {
-    await Future.wait([
-      _refreshNotifications(),
-      _contactsKey.currentState?._loadContacts() ?? Future<void>.value(),
-    ]);
+  Future<void> _refreshContactsAndChats() async {
+    await _contactsKey.currentState?._loadContacts(refreshPresence: false);
+    await _chatsKey.currentState?._loadChats();
+    _realtimeService.refreshPresence();
   }
 
   Future<void> _logout() async {
@@ -174,8 +186,9 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
       ProfileTab(
         login: userLogin,
         friendsService: _friendsService,
+        friendRequests: _friendRequests,
         onAvatarsChanged: _refreshCurrentAvatar,
-        onNotificationsChanged: _refreshFriendships,
+        onNotificationsChanged: _refreshFriendshipLists,
       ),
     ];
 
@@ -249,26 +262,28 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
         ],
       ),
 
-      bottomNavigationBar: ChatlyBottomNavigationBar(
-        selectedIndex: currentIndex,
-        profileBadgeCount: notificationCount,
-        onDestinationSelected: (index) {
-          setState(() {
-            currentIndex = index;
-          });
-          if (index == 0) {
-            unawaited(
-              _contactsKey.currentState?._loadContacts() ??
-                  Future<void>.value(),
-            );
-          }
-          if (index == 1) {
-            unawaited(
-              _chatsKey.currentState?._loadChats() ?? Future<void>.value(),
-            );
-          }
-          if (index == 2) unawaited(_refreshNotifications());
-        },
+      bottomNavigationBar: ListenableBuilder(
+        listenable: _friendRequests,
+        builder: (context, _) => ChatlyBottomNavigationBar(
+          selectedIndex: currentIndex,
+          profileBadgeCount: _friendRequests.requests.length,
+          onDestinationSelected: (index) {
+            setState(() {
+              currentIndex = index;
+            });
+            if (index == 0) {
+              unawaited(
+                _contactsKey.currentState?._loadContacts() ??
+                    Future<void>.value(),
+              );
+            }
+            if (index == 1) {
+              unawaited(
+                _chatsKey.currentState?._loadChats() ?? Future<void>.value(),
+              );
+            }
+          },
+        ),
       ),
     );
   }
@@ -320,7 +335,7 @@ class _ContactsTabState extends State<ContactsTab> {
     _loadContacts();
   }
 
-  Future<void> _loadContacts() async {
+  Future<void> _loadContacts({bool refreshPresence = true}) async {
     setState(() {
       _isLoadingContacts = true;
       _contactsError = null;
@@ -334,7 +349,7 @@ class _ContactsTabState extends State<ContactsTab> {
         _contacts = contacts;
         _isLoadingContacts = false;
       });
-      _realtimeService.refreshPresence();
+      if (refreshPresence) _realtimeService.refreshPresence();
     } catch (_) {
       if (!mounted) return;
 

@@ -12,6 +12,8 @@ import { verify } from 'jsonwebtoken';
 import { Server, Socket } from 'socket.io';
 
 import { FriendsService } from '../friendships/friends.service';
+import { FriendshipRealtimePublisher } from '../realtime/friendship-realtime.publisher';
+import { userRoom } from '../realtime/user-room';
 import type { ChatMessage } from './chats.service';
 
 type AccessTokenPayload = {
@@ -24,7 +26,7 @@ type MessageCreatedEvent = Omit<ChatMessage, 'createdAt' | 'updatedAt'> & {
   updatedAt: string;
 };
 
-export const userRoom = (userId: string): string => `user:${userId}`;
+export { userRoom } from '../realtime/user-room';
 
 type PresenceSnapshotEvent = {
   onlineUserIds: string[];
@@ -76,10 +78,12 @@ export class ChatsGateway
   constructor(
     private readonly configService: ConfigService,
     private readonly friendsService: FriendsService,
+    private readonly friendshipRealtimePublisher: FriendshipRealtimePublisher,
   ) {}
 
   afterInit(server: Server): void {
     this.server = server;
+    this.friendshipRealtimePublisher.setServer(server);
 
     server.use((socket, next) => {
       const token = socket.handshake.auth?.token;

@@ -8,6 +8,10 @@ import { alias } from 'drizzle-orm/pg-core';
 
 import { DatabaseService } from '../database/database.service';
 import {
+  FriendshipChangedEvent,
+  FriendshipRealtimePublisher,
+} from '../realtime/friendship-realtime.publisher';
+import {
   avatars,
   chatParticipants,
   chats,
@@ -23,7 +27,10 @@ const receiverAvatar = alias(avatars, 'receiver_avatar');
 
 @Injectable()
 export class FriendsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly friendshipRealtimePublisher: FriendshipRealtimePublisher,
+  ) {}
 
   async sendRequest(requesterId: string, receiverId: string) {
     if (requesterId === receiverId) {
@@ -72,6 +79,10 @@ export class FriendsService {
         .where(eq(friendships.id, existing.id))
         .returning();
 
+      this.publishFriendshipChanged(
+        [friendship.requesterId, friendship.receiverId],
+        'request_created',
+      );
       return friendship;
     }
 
@@ -88,6 +99,10 @@ export class FriendsService {
       })
       .returning();
 
+    this.publishFriendshipChanged(
+      [friendship.requesterId, friendship.receiverId],
+      'request_created',
+    );
     return friendship;
   }
 
@@ -111,6 +126,10 @@ export class FriendsService {
       throw new NotFoundException('Friend request not found');
     }
 
+    this.publishFriendshipChanged(
+      [friendship.requesterId, friendship.receiverId],
+      'request_accepted',
+    );
     return friendship;
   }
 
@@ -134,6 +153,10 @@ export class FriendsService {
       throw new NotFoundException('Friend request not found');
     }
 
+    this.publishFriendshipChanged(
+      [friendship.requesterId, friendship.receiverId],
+      'request_rejected',
+    );
     return friendship;
   }
 
@@ -181,6 +204,8 @@ export class FriendsService {
         );
       }
     });
+
+    this.publishFriendshipChanged([userId, otherUserId], 'friend_removed');
   }
 
   async getIncomingRequests(userId: string) {
@@ -339,5 +364,21 @@ export class FriendsService {
         ? friendship.receiverId
         : friendship.requesterId,
     );
+  }
+
+  private publishFriendshipChanged(
+    participantIds: readonly string[],
+    type: FriendshipChangedEvent['type'],
+  ): void {
+    try {
+      this.friendshipRealtimePublisher.publishFriendshipChanged(
+        participantIds,
+        {
+          type,
+        },
+      );
+    } catch {
+      // Realtime delivery must not fail an already committed HTTP operation.
+    }
   }
 }

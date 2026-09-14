@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { sign } from 'jsonwebtoken';
 
 import { FriendsService } from '../friendships/friends.service';
+import { FriendshipRealtimePublisher } from '../realtime/friendship-realtime.publisher';
 import { ChatsGateway, userRoom } from './chats.gateway';
 
 describe('ChatsGateway', () => {
@@ -15,8 +16,16 @@ describe('ChatsGateway', () => {
       getAcceptedFriendIds: jest.fn().mockResolvedValue(friendIds),
     }) as unknown as FriendsService;
 
+  const createFriendshipRealtimePublisher = () =>
+    ({ setServer: jest.fn() }) as unknown as FriendshipRealtimePublisher;
+
   it('authenticates the handshake and joins only the authenticated user room', async () => {
-    const gateway = new ChatsGateway(configService, createFriendsService());
+    const friendshipRealtimePublisher = createFriendshipRealtimePublisher();
+    const gateway = new ChatsGateway(
+      configService,
+      createFriendsService(),
+      friendshipRealtimePublisher,
+    );
     let middleware:
       | ((
           socket: {
@@ -47,12 +56,17 @@ describe('ChatsGateway', () => {
     await gateway.handleConnection(socket as never);
 
     expect(next).toHaveBeenCalledWith();
+    expect(friendshipRealtimePublisher.setServer).toHaveBeenCalledWith(server);
     expect(socket.join).toHaveBeenCalledWith(userRoom('user-id'));
     expect(socket.join).not.toHaveBeenCalledWith(userRoom('someone-else'));
   });
 
   it('rejects an invalid handshake token', () => {
-    const gateway = new ChatsGateway(configService, createFriendsService());
+    const gateway = new ChatsGateway(
+      configService,
+      createFriendsService(),
+      createFriendshipRealtimePublisher(),
+    );
     let middleware:
       | ((
           socket: { handshake: { auth: { token: string } } },
@@ -72,7 +86,11 @@ describe('ChatsGateway', () => {
   });
 
   it('publishes a JSON-safe message to every participant room once', () => {
-    const gateway = new ChatsGateway(configService, createFriendsService());
+    const gateway = new ChatsGateway(
+      configService,
+      createFriendsService(),
+      createFriendshipRealtimePublisher(),
+    );
     const emit = jest.fn();
     const to = jest.fn().mockReturnValue({ emit });
     (gateway as unknown as { server: { to: typeof to } }).server = { to };
@@ -102,7 +120,11 @@ describe('ChatsGateway', () => {
 
   it('forwards typing changes only to the accepted recipient room', async () => {
     const friendsService = createFriendsService(['recipient-id']);
-    const gateway = new ChatsGateway(configService, friendsService);
+    const gateway = new ChatsGateway(
+      configService,
+      friendsService,
+      createFriendshipRealtimePublisher(),
+    );
     const emit = jest.fn();
     const to = jest.fn().mockReturnValue({ emit });
     (gateway as unknown as { server: { to: typeof to } }).server = { to };
@@ -116,7 +138,9 @@ describe('ChatsGateway', () => {
       isTyping: true,
     });
 
-    expect(friendsService.getAcceptedFriendIds).toHaveBeenCalledWith('sender-id');
+    expect(friendsService.getAcceptedFriendIds).toHaveBeenCalledWith(
+      'sender-id',
+    );
     expect(to).toHaveBeenCalledWith(userRoom('recipient-id'));
     expect(emit).toHaveBeenCalledWith('typing.changed', {
       userId: 'sender-id',
@@ -131,7 +155,11 @@ describe('ChatsGateway', () => {
     [],
   ])('ignores malformed typing payload %#', async (payload) => {
     const friendsService = createFriendsService(['recipient-id']);
-    const gateway = new ChatsGateway(configService, friendsService);
+    const gateway = new ChatsGateway(
+      configService,
+      friendsService,
+      createFriendshipRealtimePublisher(),
+    );
     const to = jest.fn();
     (gateway as unknown as { server: { to: typeof to } }).server = { to };
     const socket = {
@@ -147,7 +175,11 @@ describe('ChatsGateway', () => {
 
   it('ignores typing changes targeting the sender', async () => {
     const friendsService = createFriendsService(['sender-id']);
-    const gateway = new ChatsGateway(configService, friendsService);
+    const gateway = new ChatsGateway(
+      configService,
+      friendsService,
+      createFriendshipRealtimePublisher(),
+    );
     const to = jest.fn();
     (gateway as unknown as { server: { to: typeof to } }).server = { to };
     const socket = {
@@ -166,7 +198,11 @@ describe('ChatsGateway', () => {
 
   it('ignores typing changes for users who are not accepted friends', async () => {
     const friendsService = createFriendsService(['friend-id']);
-    const gateway = new ChatsGateway(configService, friendsService);
+    const gateway = new ChatsGateway(
+      configService,
+      friendsService,
+      createFriendshipRealtimePublisher(),
+    );
     const to = jest.fn();
     (gateway as unknown as { server: { to: typeof to } }).server = { to };
     const socket = {
@@ -179,7 +215,9 @@ describe('ChatsGateway', () => {
       isTyping: true,
     });
 
-    expect(friendsService.getAcceptedFriendIds).toHaveBeenCalledWith('sender-id');
+    expect(friendsService.getAcceptedFriendIds).toHaveBeenCalledWith(
+      'sender-id',
+    );
     expect(to).not.toHaveBeenCalled();
   });
 
@@ -188,7 +226,11 @@ describe('ChatsGateway', () => {
       'online-friend',
       'offline-friend',
     ]);
-    const gateway = new ChatsGateway(configService, friendsService);
+    const gateway = new ChatsGateway(
+      configService,
+      friendsService,
+      createFriendshipRealtimePublisher(),
+    );
     const fetchSockets = jest.fn((room: string) =>
       Promise.resolve(room === userRoom('online-friend') ? [{}] : []),
     );
@@ -223,6 +265,7 @@ describe('ChatsGateway', () => {
     const gateway = new ChatsGateway(
       configService,
       createFriendsService(['friend-one', 'friend-two']),
+      createFriendshipRealtimePublisher(),
     );
     const emit = jest.fn();
     const server = {
@@ -254,6 +297,7 @@ describe('ChatsGateway', () => {
     const gateway = new ChatsGateway(
       configService,
       createFriendsService(['friend-id']),
+      createFriendshipRealtimePublisher(),
     );
     const emit = jest.fn();
     const fetchSockets = jest
@@ -284,6 +328,7 @@ describe('ChatsGateway', () => {
     const gateway = new ChatsGateway(
       configService,
       createFriendsService(['friend-id']),
+      createFriendshipRealtimePublisher(),
     );
     const emit = jest.fn();
     const server = {

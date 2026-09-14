@@ -1,8 +1,19 @@
 import { DatabaseService } from '../database/database.service';
+import { FriendshipRealtimePublisher } from '../realtime/friendship-realtime.publisher';
 import { FriendshipStatus } from './enums/friendship-status.enum';
 import { FriendsService } from './friends.service';
 
 describe('FriendsService', () => {
+  const createFriendshipRealtimePublisher = () =>
+    ({
+      publishFriendshipChanged: jest.fn(),
+    }) as unknown as FriendshipRealtimePublisher;
+
+  const createFriendsService = (
+    database: DatabaseService,
+    friendshipRealtimePublisher = createFriendshipRealtimePublisher(),
+  ) => new FriendsService(database, friendshipRealtimePublisher);
+
   it('returns incoming requests with requester avatars', async () => {
     const createdAt = new Date('2026-09-07T12:00:00.000Z');
     const builder = {
@@ -22,7 +33,7 @@ describe('FriendsService', () => {
         },
       ]),
     };
-    const service = new FriendsService({
+    const service = createFriendsService({
       db: { select: jest.fn().mockReturnValue(builder) },
     } as unknown as DatabaseService);
 
@@ -53,7 +64,7 @@ describe('FriendsService', () => {
           .fn()
           .mockResolvedValue([{ id: 'friendship-id', requesterId, status }]),
       };
-      const service = new FriendsService({
+      const service = createFriendsService({
         db: { select: jest.fn().mockReturnValue(builder) },
       } as unknown as DatabaseService);
 
@@ -74,7 +85,7 @@ describe('FriendsService', () => {
         { requesterId: 'friend-two', receiverId: 'current-user' },
       ]),
     };
-    const service = new FriendsService({
+    const service = createFriendsService({
       db: { select: jest.fn().mockReturnValue(builder) },
     } as unknown as DatabaseService);
 
@@ -84,21 +95,107 @@ describe('FriendsService', () => {
     expect(builder.where).toHaveBeenCalledTimes(1);
   });
 
+  it('publishes a request_created change after creating a friend request', async () => {
+    const receiverQuery = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: 'receiver-id' }]),
+    };
+    const existingQuery = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const friendship = {
+      id: 'friendship-id',
+      requesterId: 'requester-id',
+      receiverId: 'receiver-id',
+      status: FriendshipStatus.PENDING,
+    };
+    const insert = {
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([friendship]),
+    };
+    const publisher = createFriendshipRealtimePublisher();
+    const service = createFriendsService(
+      {
+        db: {
+          select: jest
+            .fn()
+            .mockReturnValueOnce(receiverQuery)
+            .mockReturnValueOnce(existingQuery),
+          insert: jest.fn().mockReturnValue(insert),
+        },
+      } as unknown as DatabaseService,
+      publisher,
+    );
+
+    await expect(
+      service.sendRequest('requester-id', 'receiver-id'),
+    ).resolves.toEqual(friendship);
+    expect(publisher.publishFriendshipChanged).toHaveBeenCalledWith(
+      ['requester-id', 'receiver-id'],
+      { type: 'request_created' },
+    );
+  });
+
+  it('publishes a request_accepted change only after accepting a request', async () => {
+    const friendship = {
+      id: 'friendship-id',
+      requesterId: 'requester-id',
+      receiverId: 'receiver-id',
+      status: FriendshipStatus.ACCEPTED,
+    };
+    const update = {
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([friendship]),
+    };
+    const publisher = createFriendshipRealtimePublisher();
+    const service = createFriendsService(
+      {
+        db: { update: jest.fn().mockReturnValue(update) },
+      } as unknown as DatabaseService,
+      publisher,
+    );
+
+    await expect(
+      service.acceptRequest('receiver-id', 'friendship-id'),
+    ).resolves.toEqual(friendship);
+    expect(publisher.publishFriendshipChanged).toHaveBeenCalledWith(
+      ['requester-id', 'receiver-id'],
+      { type: 'request_accepted' },
+    );
+  });
+
   it('rejects a pending request addressed to the current user', async () => {
-    const friendship = { id: 'friendship-id', status: 'rejected' };
+    const friendship = {
+      id: 'friendship-id',
+      requesterId: 'requester-id',
+      receiverId: 'current-user',
+      status: 'rejected',
+    };
     const builder = {
       set: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       returning: jest.fn().mockResolvedValue([friendship]),
     };
-    const service = new FriendsService({
-      db: { update: jest.fn().mockReturnValue(builder) },
-    } as unknown as DatabaseService);
+    const publisher = createFriendshipRealtimePublisher();
+    const service = createFriendsService(
+      {
+        db: { update: jest.fn().mockReturnValue(builder) },
+      } as unknown as DatabaseService,
+      publisher,
+    );
 
     await expect(
       service.rejectRequest('current-user', 'friendship-id'),
     ).resolves.toEqual(friendship);
     expect(builder.set).toHaveBeenCalledTimes(1);
+    expect(publisher.publishFriendshipChanged).toHaveBeenCalledWith(
+      ['requester-id', 'current-user'],
+      { type: 'request_rejected' },
+    );
   });
 
   it('removes an accepted friendship in either direction and its exact direct chat', async () => {
@@ -123,9 +220,13 @@ describe('FriendsService', () => {
       select: jest.fn().mockReturnValue(directChats),
     };
     const transaction = jest.fn(async (callback) => callback(tx));
-    const service = new FriendsService({
-      db: { transaction },
-    } as unknown as DatabaseService);
+    const publisher = createFriendshipRealtimePublisher();
+    const service = createFriendsService(
+      {
+        db: { transaction },
+      } as unknown as DatabaseService,
+      publisher,
+    );
 
     await expect(
       service.removeFriend('receiver-id', 'requester-id'),
@@ -135,6 +236,10 @@ describe('FriendsService', () => {
     expect(friendshipDelete.where).toHaveBeenCalledTimes(1);
     expect(directChats.having).toHaveBeenCalledTimes(1);
     expect(chatDelete.where).toHaveBeenCalledTimes(1);
+    expect(publisher.publishFriendshipChanged).toHaveBeenCalledWith(
+      ['receiver-id', 'requester-id'],
+      { type: 'friend_removed' },
+    );
   });
 
   it('preserves group and multi-participant direct chats by deleting only exact direct-chat matches', async () => {
@@ -160,7 +265,7 @@ describe('FriendsService', () => {
       select: jest.fn().mockReturnValue(directChats),
     };
     const transaction = jest.fn(async (callback) => callback(tx));
-    const service = new FriendsService({
+    const service = createFriendsService({
       db: { transaction },
     } as unknown as DatabaseService);
 
@@ -182,7 +287,7 @@ describe('FriendsService', () => {
       select: jest.fn(),
     };
     const transaction = jest.fn(async (callback) => callback(tx));
-    const service = new FriendsService({
+    const service = createFriendsService({
       db: { transaction },
     } as unknown as DatabaseService);
 
@@ -190,5 +295,53 @@ describe('FriendsService', () => {
       service.removeFriend('current-user', 'not-a-friend'),
     ).rejects.toMatchObject({ status: 404 });
     expect(tx.select).not.toHaveBeenCalled();
+  });
+
+  it('does not publish when the friendship transaction fails', async () => {
+    const publisher = createFriendshipRealtimePublisher();
+    const service = createFriendsService(
+      {
+        db: {
+          transaction: jest
+            .fn()
+            .mockRejectedValue(new Error('database unavailable')),
+        },
+      } as unknown as DatabaseService,
+      publisher,
+    );
+
+    await expect(
+      service.removeFriend('current-user', 'friend-user'),
+    ).rejects.toThrow('database unavailable');
+    expect(publisher.publishFriendshipChanged).not.toHaveBeenCalled();
+  });
+
+  it('returns a committed mutation when publishing realtime fails', async () => {
+    const friendship = {
+      id: 'friendship-id',
+      requesterId: 'requester-id',
+      receiverId: 'receiver-id',
+      status: FriendshipStatus.ACCEPTED,
+    };
+    const update = {
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([friendship]),
+    };
+    const publisher = {
+      publishFriendshipChanged: jest.fn(() => {
+        throw new Error('Socket.IO unavailable');
+      }),
+    } as unknown as FriendshipRealtimePublisher;
+    const service = createFriendsService(
+      {
+        db: { update: jest.fn().mockReturnValue(update) },
+      } as unknown as DatabaseService,
+      publisher,
+    );
+
+    await expect(
+      service.acceptRequest('receiver-id', 'friendship-id'),
+    ).resolves.toEqual(friendship);
   });
 });

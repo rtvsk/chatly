@@ -16,11 +16,38 @@ class TypingChangedEvent {
   final bool isTyping;
 }
 
+enum FriendshipChangeType {
+  requestCreated('request_created'),
+  requestAccepted('request_accepted'),
+  requestRejected('request_rejected'),
+  friendRemoved('friend_removed');
+
+  const FriendshipChangeType(this.value);
+
+  final String value;
+
+  static FriendshipChangeType? fromValue(String value) {
+    for (final type in values) {
+      if (type.value == value) return type;
+    }
+    return null;
+  }
+}
+
+class FriendshipChangedEvent {
+  const FriendshipChangedEvent({required this.type});
+
+  final FriendshipChangeType type;
+}
+
 abstract interface class ChatRealtime {
   Stream<ChatMessage> get messages;
 
   /// Broadcasts validated typing-state changes received from other users.
   Stream<TypingChangedEvent> get typingChanges;
+
+  /// Broadcasts validated friendship changes received from the server.
+  Stream<FriendshipChangedEvent> get friendshipChanges;
 
   /// Emits after each successful Socket.IO connection, including reconnects.
   Stream<void> get connected;
@@ -61,6 +88,8 @@ class ChatRealtimeService implements ChatRealtime {
       StreamController<ChatMessage>.broadcast();
   final StreamController<TypingChangedEvent> _typingChanges =
       StreamController<TypingChangedEvent>.broadcast();
+  final StreamController<FriendshipChangedEvent> _friendshipChanges =
+      StreamController<FriendshipChangedEvent>.broadcast();
   final StreamController<void> _connected = StreamController<void>.broadcast();
   final StreamController<Set<String>> _onlineUserIdsChanges =
       StreamController<Set<String>>.broadcast();
@@ -77,6 +106,10 @@ class ChatRealtimeService implements ChatRealtime {
 
   @override
   Stream<TypingChangedEvent> get typingChanges => _typingChanges.stream;
+
+  @override
+  Stream<FriendshipChangedEvent> get friendshipChanges =>
+      _friendshipChanges.stream;
 
   @override
   Stream<void> get connected => _connected.stream;
@@ -117,7 +150,7 @@ class ChatRealtimeService implements ChatRealtime {
     socket.onAny((event, data) {
       debugPrint('WS IN  $event: $data');
     });
-    socket.onAnyOutgoing((event, data) {
+    socket.onAnyOutgoing((String event, [dynamic data]) {
       debugPrint('WS OUT $event: $data');
     });
     socket.onConnect((_) {
@@ -154,6 +187,16 @@ class ChatRealtimeService implements ChatRealtime {
       _typingChanges.add(
         TypingChangedEvent(userId: userId, isTyping: isTyping),
       );
+    });
+    socket.on('friendship.changed', (payload) {
+      if (!_isCurrent(generation, socket) || payload is! Map) return;
+
+      final value = payload['type'];
+      if (value is! String) return;
+      final type = FriendshipChangeType.fromValue(value);
+      if (type == null) return;
+
+      _friendshipChanges.add(FriendshipChangedEvent(type: type));
     });
     socket.on('presence.snapshot', (payload) {
       if (!_isCurrent(generation, socket) || payload is! Map) return;

@@ -6,6 +6,7 @@ import '../models/avatar.dart';
 import '../services/api_service.dart';
 import '../services/avatar_service.dart';
 import '../services/friends_service.dart';
+import '../services/friend_requests_controller.dart';
 import 'notifications_screen.dart';
 
 class ProfileTab extends StatelessWidget {
@@ -13,6 +14,7 @@ class ProfileTab extends StatelessWidget {
     required this.login,
     required this.onAvatarsChanged,
     required this.onNotificationsChanged,
+    required this.friendRequests,
     this.friendsService = const FriendsService(),
     super.key,
   });
@@ -20,6 +22,7 @@ class ProfileTab extends StatelessWidget {
   final String login;
   final Future<void> Function() onAvatarsChanged;
   final Future<void> Function() onNotificationsChanged;
+  final FriendRequestsController friendRequests;
   final FriendsService friendsService;
 
   @override
@@ -55,6 +58,7 @@ class ProfileTab extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (_) => NotificationsScreen(
                       friendsService: friendsService,
+                      friendRequests: friendRequests,
                       onNotificationsChanged: onNotificationsChanged,
                     ),
                   ),

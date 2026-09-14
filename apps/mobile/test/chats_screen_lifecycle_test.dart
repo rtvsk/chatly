@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:chatly/models/avatar.dart';
 import 'package:chatly/models/chat.dart';
 import 'package:chatly/models/contact.dart';
@@ -7,24 +9,40 @@ import 'package:chatly/services/avatar_service.dart';
 import 'package:chatly/services/chats_service.dart';
 import 'package:chatly/services/contacts_service.dart';
 import 'package:chatly/services/friends_service.dart';
+import 'package:chatly/services/chat_realtime_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'chat_realtime_test_support.dart';
 
 class _EmptyContactsService extends ContactsService {
+  int getFriendsCalls = 0;
+
   @override
-  Future<List<Contact>> getFriends() async => const [];
+  Future<List<Contact>> getFriends() async {
+    getFriendsCalls += 1;
+    return const [];
+  }
 }
 
 class _EmptyChatsService extends ChatsService {
+  int getChatsCalls = 0;
+
   @override
-  Future<List<ChatSummary>> getChats() async => const [];
+  Future<List<ChatSummary>> getChats() async {
+    getChatsCalls += 1;
+    return const [];
+  }
 }
 
 class _EmptyFriendsService extends FriendsService {
+  int incomingRequestsCalls = 0;
+
   @override
-  Future<List<FriendRequest>> getIncomingRequests() async => const [];
+  Future<List<FriendRequest>> getIncomingRequests() async {
+    incomingRequestsCalls += 1;
+    return const [];
+  }
 }
 
 class _EmptyAvatarService extends AvatarService {
@@ -32,19 +50,34 @@ class _EmptyAvatarService extends AvatarService {
   Future<List<Avatar>> getAvatars() async => const [];
 }
 
+class _BlockingFriendsService extends FriendsService {
+  final initialRequest = Completer<void>();
+  int incomingRequestsCalls = 0;
+
+  @override
+  Future<List<FriendRequest>> getIncomingRequests() async {
+    incomingRequestsCalls += 1;
+    if (incomingRequestsCalls == 1) await initialRequest.future;
+    return const [];
+  }
+}
+
 void main() {
   testWidgets(
     'reconnects and disconnects realtime service with app lifecycle',
     (tester) async {
       final realtime = FakeChatRealtime();
+      final friendsService = _EmptyFriendsService();
+      final contactsService = _EmptyContactsService();
+      final chatsService = _EmptyChatsService();
 
       await tester.pumpWidget(
         MaterialApp(
           home: ChatsScreen(
             realtimeService: realtime,
-            contactsService: _EmptyContactsService(),
-            chatsService: _EmptyChatsService(),
-            friendsService: _EmptyFriendsService(),
+            contactsService: contactsService,
+            chatsService: chatsService,
+            friendsService: friendsService,
             avatarService: _EmptyAvatarService(),
             userLoginLoader: () async => 'me',
           ),
@@ -52,6 +85,32 @@ void main() {
       );
       await tester.pump();
       expect(realtime.connectCalls, 1);
+      expect(friendsService.incomingRequestsCalls, 1);
+
+      await tester.pump(const Duration(seconds: 16));
+      expect(
+        friendsService.incomingRequestsCalls,
+        1,
+        reason: 'incoming requests are not polled',
+      );
+
+      realtime.signalConnected();
+      await tester.pumpAndSettle();
+      expect(friendsService.incomingRequestsCalls, 2);
+      expect(contactsService.getFriendsCalls, 2);
+      expect(chatsService.getChatsCalls, 2);
+      expect(realtime.refreshPresenceCalls, 2);
+
+      realtime.addFriendshipChanged(FriendshipChangeType.requestCreated);
+      await tester.pump();
+      expect(friendsService.incomingRequestsCalls, 3);
+
+      realtime.addFriendshipChanged(FriendshipChangeType.requestAccepted);
+      await tester.pumpAndSettle();
+      expect(friendsService.incomingRequestsCalls, 4);
+      expect(contactsService.getFriendsCalls, 3);
+      expect(chatsService.getChatsCalls, 3);
+      expect(realtime.refreshPresenceCalls, 3);
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       await tester.pump();
@@ -72,6 +131,40 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
       expect(realtime.disconnectCalls, 4);
+      expect(realtime.connectedCancellations, 1);
+      expect(realtime.friendshipChangesCancellations, 1);
     },
   );
+
+  testWidgets('coalesces rapid friendship events while a sync is in flight', (
+    tester,
+  ) async {
+    final realtime = FakeChatRealtime();
+    final friendsService = _BlockingFriendsService();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatsScreen(
+          realtimeService: realtime,
+          contactsService: _EmptyContactsService(),
+          chatsService: _EmptyChatsService(),
+          friendsService: friendsService,
+          avatarService: _EmptyAvatarService(),
+          userLoginLoader: () async => 'me',
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(friendsService.incomingRequestsCalls, 1);
+
+    realtime.addFriendshipChanged(FriendshipChangeType.requestCreated);
+    realtime.addFriendshipChanged(FriendshipChangeType.requestRejected);
+    realtime.addFriendshipChanged(FriendshipChangeType.friendRemoved);
+    await tester.pump();
+
+    friendsService.initialRequest.complete();
+    await tester.pumpAndSettle();
+
+    expect(friendsService.incomingRequestsCalls, 2);
+  });
 }

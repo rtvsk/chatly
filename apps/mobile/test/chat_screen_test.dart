@@ -53,6 +53,15 @@ final _chat = ChatSummary(
   unreadCount: 0,
 );
 
+dynamic _receiptPainter(WidgetTester tester, String messageId) {
+  final receipt = find.byKey(Key('message-read-receipt-$messageId'));
+  final customPaint = find.descendant(
+    of: receipt,
+    matching: find.byType(CustomPaint),
+  );
+  return tester.widget<CustomPaint>(customPaint).painter;
+}
+
 void main() {
   testWidgets('loads messages and appends a confirmed sent message', (
     tester,
@@ -242,9 +251,23 @@ void main() {
     final readReceipt = find.byKey(
       const Key('message-read-receipt-outbound-read'),
     );
-    expect(tester.widget<Icon>(unreadReceipt).color, Colors.grey);
-    expect(tester.widget<Icon>(readReceipt).color, Colors.blue);
+    expect(tester.getSize(unreadReceipt), const Size(15, 14));
+    expect(tester.getSize(readReceipt), const Size(22, 14));
+    expect(_receiptPainter(tester, 'outbound-unread').color, Colors.grey);
+    expect(_receiptPainter(tester, 'outbound-unread').checkCount, 1);
+    expect(_receiptPainter(tester, 'outbound-unread').strokeWidth, 2.4);
+    expect(_receiptPainter(tester, 'outbound-read').color, Colors.blue);
+    expect(_receiptPainter(tester, 'outbound-read').checkCount, 2);
+    expect(_receiptPainter(tester, 'outbound-read').strokeWidth, 2.4);
     expect(find.byKey(const Key('message-read-receipt-inbound')), findsNothing);
+
+    final bubbleRect = tester.getRect(
+      find.byKey(const Key('message-outbound-unread')),
+    );
+    final receiptRect = tester.getRect(unreadReceipt);
+    expect(receiptRect.right, greaterThan(bubbleRect.right));
+    expect(receiptRect.right - bubbleRect.right, closeTo(10, 0.01));
+    expect(receiptRect.bottom, greaterThan(bubbleRect.bottom));
   });
 
   testWidgets(
@@ -312,12 +335,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<Icon>(find.byKey(const Key('message-read-receipt-first')))
-            .color,
-        Colors.grey,
-      );
+      expect(_receiptPainter(tester, 'first').color, Colors.grey);
+      expect(_receiptPainter(tester, 'first').checkCount, 1);
 
       realtime.addMessageRead(
         MessageReadEvent(
@@ -329,24 +348,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(
-        tester
-            .widget<Icon>(find.byKey(const Key('message-read-receipt-first')))
-            .color,
-        Colors.blue,
-      );
-      expect(
-        tester
-            .widget<Icon>(find.byKey(const Key('message-read-receipt-cursor')))
-            .color,
-        Colors.blue,
-      );
-      expect(
-        tester
-            .widget<Icon>(find.byKey(const Key('message-read-receipt-later')))
-            .color,
-        Colors.grey,
-      );
+      expect(_receiptPainter(tester, 'first').color, Colors.blue);
+      expect(_receiptPainter(tester, 'first').checkCount, 2);
+      expect(_receiptPainter(tester, 'cursor').color, Colors.blue);
+      expect(_receiptPainter(tester, 'cursor').checkCount, 2);
+      expect(_receiptPainter(tester, 'later').color, Colors.grey);
+      expect(_receiptPainter(tester, 'later').checkCount, 1);
       expect(
         find.byKey(const Key('message-read-receipt-incoming')),
         findsNothing,
@@ -361,12 +368,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<Icon>(find.byKey(const Key('message-read-receipt-cursor')))
-            .color,
-        Colors.blue,
-      );
+      expect(_receiptPainter(tester, 'cursor').color, Colors.blue);
+      expect(_receiptPainter(tester, 'cursor').checkCount, 2);
     },
   );
 

@@ -442,35 +442,101 @@ class _MessageBubble extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        key: Key('message-${message.id}'),
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: const BoxConstraints(maxWidth: 300),
-        decoration: BoxDecoration(
-          color: isMine ? colors.primary : colors.secondaryContainer,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: isMine
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(message.text, style: TextStyle(color: colors.onPrimary)),
-                  const SizedBox(height: 2),
-                  Icon(
-                    Icons.check,
-                    key: Key('message-read-receipt-${message.id}'),
-                    size: 14,
-                    color: message.readByPeer ? Colors.blue : Colors.grey,
-                  ),
-                ],
-              )
-            : Text(
-                message.text,
-                style: TextStyle(color: colors.onSecondaryContainer),
+      child: Padding(
+        padding: EdgeInsets.only(right: isMine ? 8 : 0, bottom: 12),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              key: Key('message-${message.id}'),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              constraints: const BoxConstraints(maxWidth: 300),
+              decoration: BoxDecoration(
+                color: isMine ? colors.primary : colors.secondaryContainer,
+                borderRadius: BorderRadius.circular(16),
               ),
+              child: Text(
+                message.text,
+                style: TextStyle(
+                  color: isMine
+                      ? colors.onPrimary
+                      : colors.onSecondaryContainer,
+                ),
+              ),
+            ),
+            if (isMine)
+              Positioned(
+                right: -10,
+                bottom: -5,
+                child: _ReadReceipt(
+                  key: Key('message-read-receipt-${message.id}'),
+                  isRead: message.readByPeer,
+                ),
+              ),
+          ],
+        ),
       ),
     );
+  }
+}
+
+class _ReadReceipt extends StatelessWidget {
+  const _ReadReceipt({required this.isRead, super.key});
+
+  final bool isRead;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: isRead ? 'Read' : 'Delivered',
+      child: CustomPaint(
+        size: Size(isRead ? 22 : 15, 14),
+        painter: _ReadReceiptPainter(
+          color: isRead ? Colors.blue : Colors.grey,
+          checkCount: isRead ? 2 : 1,
+          strokeWidth: 2.4,
+        ),
+      ),
+    );
+  }
+}
+
+class _ReadReceiptPainter extends CustomPainter {
+  const _ReadReceiptPainter({
+    required this.color,
+    required this.checkCount,
+    required this.strokeWidth,
+  });
+
+  final Color color;
+  final int checkCount;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    void drawCheck(double offsetX) {
+      final path = Path()
+        ..moveTo(offsetX + 1, 7)
+        ..lineTo(offsetX + 5, 11)
+        ..lineTo(offsetX + 13, 2);
+      canvas.drawPath(path, paint);
+    }
+
+    drawCheck(0);
+    if (checkCount == 2) drawCheck(7);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ReadReceiptPainter oldDelegate) {
+    return color != oldDelegate.color ||
+        checkCount != oldDelegate.checkCount ||
+        strokeWidth != oldDelegate.strokeWidth;
   }
 }

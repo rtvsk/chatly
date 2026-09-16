@@ -21,6 +21,7 @@ export default defineConfig({
     user: required('DATABASE_USER'),
     password: required('DATABASE_PASSWORD'),
     database: required('DATABASE_NAME'),
+    ssl: false,
   },
   schemaFilter: ['public'],
   tablesFilter: [

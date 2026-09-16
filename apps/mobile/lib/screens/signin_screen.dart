@@ -2,6 +2,7 @@ import 'package:chatly/screens/chats_screen.dart';
 
 import '../services/auth_service.dart';
 import 'package:flutter/material.dart';
+import 'signup_screen.dart';
 import 'verify_email_screen.dart';
 
 class SigninScreen extends StatefulWidget {
@@ -82,6 +83,19 @@ class _SigninScreenState extends State<SigninScreen> {
     );
   }
 
+  void _showSignup() {
+    final navigator = Navigator.of(context);
+
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    navigator.pushReplacement(
+      MaterialPageRoute(builder: (_) => const SignupScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -118,6 +132,12 @@ class _SigninScreenState extends State<SigninScreen> {
                 onPressed: _isLoading ? null : _signin,
                 child: Text(_isLoading ? 'Signing in...' : 'Sign in'),
               ),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              key: const Key('signin-show-signup-button'),
+              onPressed: _isLoading ? null : _showSignup,
+              child: const Text("Don't have an account? Sign up"),
             ),
           ],
         ),

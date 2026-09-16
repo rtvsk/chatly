@@ -1,5 +1,6 @@
 import 'package:chatly/screens/chats_screen.dart';
 import 'package:chatly/screens/signin_screen.dart';
+import 'package:chatly/screens/signup_screen.dart';
 import 'package:chatly/services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,28 @@ class _AuthenticatedAuthService extends AuthService {
 }
 
 void main() {
+  testWidgets('returns from sign in to sign up', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) =>
+              SignupScreen(authService: _AuthenticatedAuthService()),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Already registered? Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SigninScreen), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('signin-show-signup-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SignupScreen), findsOneWidget);
+    expect(find.byType(SigninScreen), findsNothing);
+  });
+
   testWidgets('successful sign in clears previous authentication routes', (
     tester,
   ) async {

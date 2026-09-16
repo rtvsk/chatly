@@ -50,10 +50,28 @@ class AuthService {
     : _client = client ?? http.Client(),
       _storage = storage ?? TokenStorage.instance;
 
+  static Future<AuthenticationResult>? _refreshInFlight;
+
   final http.Client _client;
   final AuthSessionStorage _storage;
 
   Future<AuthenticationResult> refreshSession() async {
+    final activeRefresh = _refreshInFlight;
+    if (activeRefresh != null) return activeRefresh;
+
+    final refresh = _performRefreshSession();
+    _refreshInFlight = refresh;
+
+    try {
+      return await refresh;
+    } finally {
+      if (identical(_refreshInFlight, refresh)) {
+        _refreshInFlight = null;
+      }
+    }
+  }
+
+  Future<AuthenticationResult> _performRefreshSession() async {
     final refreshToken = await _storage.getRefreshToken();
 
     if (refreshToken == null || refreshToken.isEmpty) {

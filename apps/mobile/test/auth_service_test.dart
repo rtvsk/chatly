@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:chatly/services/auth_service.dart';
@@ -153,6 +154,41 @@ void main() {
       expect(verification.login, 'alice');
       expect(storage.refreshToken, isNull);
       expect(storage.clearCount, 1);
+    });
+
+    test('coalesces concurrent refreshes and allows a later refresh', () async {
+      final storage = MemorySessionStorage()..refreshToken = 'old-refresh';
+      final responseCompleter = Completer<void>();
+      final requestStarted = Completer<void>();
+      var requestCount = 0;
+      final client = MockClient((_) async {
+        requestCount++;
+        if (!requestStarted.isCompleted) requestStarted.complete();
+        await responseCompleter.future;
+        return http.Response(
+          jsonEncode({
+            'accessToken': 'access',
+            'refreshToken': 'refresh',
+            'user': {'login': 'alice', 'email': 'alice@example.com'},
+          }),
+          201,
+        );
+      });
+      final firstService = AuthService(storage: storage, client: client);
+      final secondService = AuthService(storage: storage, client: client);
+
+      final firstRefresh = firstService.refreshSession();
+      await requestStarted.future;
+      final secondRefresh = secondService.refreshSession();
+      responseCompleter.complete();
+
+      final results = await Future.wait([firstRefresh, secondRefresh]);
+
+      expect(results, everyElement(isA<Authenticated>()));
+      expect(requestCount, 1);
+
+      expect(await firstService.refreshSession(), isA<Authenticated>());
+      expect(requestCount, 2);
     });
 
     test('resend accepts the generic 202 response', () async {

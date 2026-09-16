@@ -42,6 +42,7 @@ class ChatMessage {
     required this.text,
     required this.createdAt,
     required this.updatedAt,
+    required this.readByPeer,
   });
 
   final String id;
@@ -50,6 +51,19 @@ class ChatMessage {
   final String text;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final bool readByPeer;
+
+  ChatMessage copyWith({bool? readByPeer}) {
+    return ChatMessage(
+      id: id,
+      chatId: chatId,
+      senderId: senderId,
+      text: text,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      readByPeer: readByPeer ?? this.readByPeer,
+    );
+  }
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     return ChatMessage(
@@ -59,6 +73,7 @@ class ChatMessage {
       text: json['text'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      readByPeer: json['readByPeer'] as bool,
     );
   }
 }

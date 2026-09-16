@@ -53,6 +53,7 @@ void main() {
             text: 'Last message',
             createdAt: DateTime.utc(2026, 9, 13, 10),
             updatedAt: DateTime.utc(2026, 9, 13, 10),
+            readByPeer: false,
           ),
         ),
       ],
@@ -94,6 +95,7 @@ void main() {
         text: 'A new message',
         createdAt: DateTime.utc(2026, 9, 13, 11),
         updatedAt: DateTime.utc(2026, 9, 13, 11),
+        readByPeer: false,
       ),
     );
     await tester.pumpAndSettle();

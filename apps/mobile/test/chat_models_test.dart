@@ -14,6 +14,7 @@ void main() {
         'text': 'Hello',
         'createdAt': '2026-09-13T10:00:00.000Z',
         'updatedAt': '2026-09-13T10:00:00.000Z',
+        'readByPeer': false,
       },
       'createdAt': '2026-09-13T09:00:00.000Z',
       'updatedAt': '2026-09-13T10:00:00.000Z',
@@ -35,10 +36,12 @@ void main() {
       'text': 'A message',
       'createdAt': '2026-09-13T10:00:00.000Z',
       'updatedAt': '2026-09-13T10:01:00.000Z',
+      'readByPeer': true,
     });
 
     expect(message.chatId, 'chat-id');
     expect(message.senderId, 'sender-id');
     expect(message.updatedAt, DateTime.utc(2026, 9, 13, 10, 1));
+    expect(message.readByPeer, isTrue);
   });
 }

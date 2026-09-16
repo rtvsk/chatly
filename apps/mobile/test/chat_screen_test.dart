@@ -1,6 +1,7 @@
 import 'package:chatly/models/chat.dart';
 import 'package:chatly/models/contact.dart';
 import 'package:chatly/screens/chat_screen.dart';
+import 'package:chatly/services/chat_realtime_service.dart';
 import 'package:chatly/services/chats_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,6 +33,7 @@ class FakeChatsService extends ChatsService {
       text: text,
       createdAt: DateTime.utc(2026, 9, 13, 11),
       updatedAt: DateTime.utc(2026, 9, 13, 11),
+      readByPeer: false,
     );
   }
 
@@ -64,6 +66,7 @@ void main() {
           text: 'Hello',
           createdAt: DateTime.utc(2026, 9, 13, 10),
           updatedAt: DateTime.utc(2026, 9, 13, 10),
+          readByPeer: false,
         ),
       ],
     );
@@ -107,6 +110,7 @@ void main() {
           text: 'Initial message',
           createdAt: DateTime.utc(2026, 9, 13, 10),
           updatedAt: DateTime.utc(2026, 9, 13, 10),
+          readByPeer: false,
         ),
       ],
     );
@@ -118,6 +122,7 @@ void main() {
       text: 'Realtime message',
       createdAt: DateTime.utc(2026, 9, 13, 11),
       updatedAt: DateTime.utc(2026, 9, 13, 11),
+      readByPeer: false,
     );
 
     await tester.pumpWidget(
@@ -139,6 +144,7 @@ void main() {
         text: 'Wrong chat',
         createdAt: DateTime.utc(2026, 9, 13, 11),
         updatedAt: DateTime.utc(2026, 9, 13, 11),
+        readByPeer: false,
       ),
     );
     await tester.pump();
@@ -172,6 +178,7 @@ void main() {
           text: 'Hello',
           createdAt: DateTime.utc(2026, 9, 13, 10),
           updatedAt: DateTime.utc(2026, 9, 13, 10),
+          readByPeer: false,
         ),
       ],
     );
@@ -186,6 +193,182 @@ void main() {
     expect(find.text('Hello'), findsOneWidget);
     expect(service.markedReadMessageIds, ['peer-message']);
   });
+
+  testWidgets('shows read receipts only on outgoing message bubbles', (
+    tester,
+  ) async {
+    final service = FakeChatsService(
+      messages: [
+        ChatMessage(
+          id: 'outbound-unread',
+          chatId: 'chat-id',
+          senderId: 'current-user-id',
+          text: 'Pending',
+          createdAt: DateTime.utc(2026, 9, 13, 10),
+          updatedAt: DateTime.utc(2026, 9, 13, 10),
+          readByPeer: false,
+        ),
+        ChatMessage(
+          id: 'outbound-read',
+          chatId: 'chat-id',
+          senderId: 'current-user-id',
+          text: 'Read',
+          createdAt: DateTime.utc(2026, 9, 13, 11),
+          updatedAt: DateTime.utc(2026, 9, 13, 11),
+          readByPeer: true,
+        ),
+        ChatMessage(
+          id: 'inbound',
+          chatId: 'chat-id',
+          senderId: 'peer-id',
+          text: 'Incoming',
+          createdAt: DateTime.utc(2026, 9, 13, 12),
+          updatedAt: DateTime.utc(2026, 9, 13, 12),
+          readByPeer: false,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(chat: _chat, chatsService: service),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final unreadReceipt = find.byKey(
+      const Key('message-read-receipt-outbound-unread'),
+    );
+    final readReceipt = find.byKey(
+      const Key('message-read-receipt-outbound-read'),
+    );
+    expect(tester.widget<Icon>(unreadReceipt).color, Colors.grey);
+    expect(tester.widget<Icon>(readReceipt).color, Colors.blue);
+    expect(find.byKey(const Key('message-read-receipt-inbound')), findsNothing);
+  });
+
+  testWidgets(
+    'applies a peer read cursor to every outbound message it covers',
+    (tester) async {
+      final realtime = FakeChatRealtime();
+      final service = FakeChatsService(
+        messages: [
+          ChatMessage(
+            id: 'first',
+            chatId: 'chat-id',
+            senderId: 'current-user-id',
+            text: 'First',
+            createdAt: DateTime.utc(2026, 9, 13, 10),
+            updatedAt: DateTime.utc(2026, 9, 13, 10),
+            readByPeer: false,
+          ),
+          ChatMessage(
+            id: 'cursor',
+            chatId: 'chat-id',
+            senderId: 'current-user-id',
+            text: 'Cursor',
+            createdAt: DateTime.utc(2026, 9, 13, 11),
+            updatedAt: DateTime.utc(2026, 9, 13, 11),
+            readByPeer: false,
+          ),
+          ChatMessage(
+            id: 'later',
+            chatId: 'chat-id',
+            senderId: 'current-user-id',
+            text: 'Later',
+            createdAt: DateTime.utc(2026, 9, 13, 11),
+            updatedAt: DateTime.utc(2026, 9, 13, 11),
+            readByPeer: false,
+          ),
+          ChatMessage(
+            id: 'incoming',
+            chatId: 'chat-id',
+            senderId: 'peer-id',
+            text: 'Peer message',
+            createdAt: DateTime.utc(2026, 9, 13, 9),
+            updatedAt: DateTime.utc(2026, 9, 13, 9),
+            readByPeer: false,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatScreen(
+            chat: _chat,
+            chatsService: service,
+            realtimeService: realtime,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      realtime.addMessageRead(
+        MessageReadEvent(
+          chatId: 'chat-id',
+          readerId: 'other-user-id',
+          messageId: 'cursor',
+          messageCreatedAt: DateTime.utc(2026, 9, 13, 11),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Icon>(find.byKey(const Key('message-read-receipt-first')))
+            .color,
+        Colors.grey,
+      );
+
+      realtime.addMessageRead(
+        MessageReadEvent(
+          chatId: 'chat-id',
+          readerId: 'peer-id',
+          messageId: 'cursor',
+          messageCreatedAt: DateTime.utc(2026, 9, 13, 11),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<Icon>(find.byKey(const Key('message-read-receipt-first')))
+            .color,
+        Colors.blue,
+      );
+      expect(
+        tester
+            .widget<Icon>(find.byKey(const Key('message-read-receipt-cursor')))
+            .color,
+        Colors.blue,
+      );
+      expect(
+        tester
+            .widget<Icon>(find.byKey(const Key('message-read-receipt-later')))
+            .color,
+        Colors.grey,
+      );
+      expect(
+        find.byKey(const Key('message-read-receipt-incoming')),
+        findsNothing,
+      );
+
+      realtime.addMessageRead(
+        MessageReadEvent(
+          chatId: 'chat-id',
+          readerId: 'peer-id',
+          messageId: 'first',
+          messageCreatedAt: DateTime.utc(2026, 9, 13, 10),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Icon>(find.byKey(const Key('message-read-receipt-cursor')))
+            .color,
+        Colors.blue,
+      );
+    },
+  );
 
   testWidgets('shows and clears the peer online status from presence updates', (
     tester,
@@ -343,6 +526,7 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
 
     expect(realtime.messageCancellations, 1);
+    expect(realtime.messageReadCancellations, 1);
     expect(realtime.typingChangesCancellations, 1);
     expect(realtime.connectedCancellations, 1);
     expect(realtime.onlineUserIdsCancellations, 1);

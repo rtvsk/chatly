@@ -236,4 +236,48 @@ void main() {
     expect(changes.single.type, FriendshipChangeType.requestCreated);
     await subscription.cancel();
   });
+
+  test(
+    'publishes valid read receipts and ignores malformed payloads',
+    () async {
+      final socket = _TestSocket();
+      final realtime = ChatRealtimeService(
+        accessToken: () => 'access-token',
+        socketFactory: (_, _) => socket,
+      );
+      final reads = <MessageReadEvent>[];
+      final subscription = realtime.messageReads.listen(reads.add);
+
+      await realtime.connect();
+      socket.triggerConnect();
+      socket.triggerEvent('message.read', {
+        'chatId': 'chat-id',
+        'readerId': 'peer-id',
+        'messageId': 'message-id',
+        'messageCreatedAt': '2026-09-13T11:00:00.000Z',
+      });
+      socket.triggerEvent('message.read', {
+        'chatId': 'chat-id',
+        'readerId': 'peer-id',
+        'messageId': 'message-id',
+        'messageCreatedAt': 'not-a-date',
+      });
+      socket.triggerEvent('message.read', {
+        'chatId': 'chat-id',
+        'readerId': 7,
+        'messageId': 'message-id',
+        'messageCreatedAt': '2026-09-13T11:00:00.000Z',
+      });
+      socket.triggerEvent('message.read', const ['not-a-map']);
+      await _flushEvents();
+
+      expect(reads, hasLength(1));
+      expect(reads.single.chatId, 'chat-id');
+      expect(reads.single.readerId, 'peer-id');
+      expect(reads.single.messageId, 'message-id');
+      expect(reads.single.messageCreatedAt, DateTime.utc(2026, 9, 13, 11));
+
+      await subscription.cancel();
+    },
+  );
 }

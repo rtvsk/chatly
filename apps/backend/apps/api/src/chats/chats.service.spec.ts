@@ -7,6 +7,7 @@ import { ChatsService } from './chats.service';
 describe('ChatsService', () => {
   const gateway = {
     publishMessageCreated: jest.fn(),
+    publishMessageRead: jest.fn(),
   } as unknown as ChatsGateway;
 
   it('returns direct chat summaries with a nullable last message', async () => {
@@ -28,6 +29,7 @@ describe('ChatsService', () => {
           lastMessageText: null,
           lastMessageCreatedAt: null,
           lastMessageUpdatedAt: null,
+          lastMessageReadByPeer: false,
           unreadCount: 0,
           createdAt,
           updatedAt: createdAt,
@@ -60,9 +62,7 @@ describe('ChatsService', () => {
 
     const unreadCount = select.mock.calls[0][0].unreadCount;
     const query = new PgDialect().sqlToQuery(unreadCount);
-    expect(query.sql).toContain(
-      'from "messages" as "unread_chat_message"',
-    );
+    expect(query.sql).toContain('from "messages" as "unread_chat_message"');
     expect(query.sql).toContain(
       'left join "messages" as "last_read_chat_message"',
     );
@@ -75,6 +75,54 @@ describe('ChatsService', () => {
       '"unread_chat_message"."id" > "last_read_chat_message"."id"',
     );
     expect(query.params).toEqual(['current-user']);
+  });
+
+  it('includes the peer read status on a chat summary last message', async () => {
+    const createdAt = new Date('2026-09-13T09:00:00.000Z');
+    const builder = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockResolvedValue([
+        {
+          id: 'chat-id',
+          peerId: 'peer-id',
+          peerLogin: 'alice',
+          peerAvatarId: null,
+          lastMessageId: 'message-id',
+          lastMessageChatId: 'chat-id',
+          lastMessageSenderId: 'current-user',
+          lastMessageText: 'Hello',
+          lastMessageCreatedAt: createdAt,
+          lastMessageUpdatedAt: createdAt,
+          lastMessageReadByPeer: true,
+          unreadCount: 0,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      ]),
+    };
+    const select = jest.fn().mockReturnValue(builder);
+    const service = new ChatsService(
+      { db: { select } } as unknown as DatabaseService,
+      gateway,
+    );
+
+    await expect(service.getMyChats('current-user')).resolves.toEqual([
+      expect.objectContaining({
+        lastMessage: expect.objectContaining({
+          id: 'message-id',
+          readByPeer: true,
+        }),
+      }),
+    ]);
+
+    const readByPeer = select.mock.calls[0][0].lastMessageReadByPeer;
+    const query = new PgDialect().sqlToQuery(readByPeer);
+    expect(query.sql).toContain('"peer_last_read_message"');
+    expect(query.sql).toContain('< "peer_last_read_message"."createdAt"');
+    expect(builder.leftJoin).toHaveBeenCalledTimes(3);
   });
 
   it('trims a message and atomically updates its chat', async () => {
@@ -129,7 +177,7 @@ describe('ChatsService', () => {
 
     await expect(
       service.sendMessage('current-user', 'chat-id', '  Hello  '),
-    ).resolves.toEqual(message);
+    ).resolves.toEqual({ ...message, readByPeer: false });
 
     expect(participantQuery.for).toHaveBeenCalledWith('update');
     expect(insertMessage.values).toHaveBeenCalledWith({
@@ -142,7 +190,7 @@ describe('ChatsService', () => {
     );
     expect(gateway.publishMessageCreated).toHaveBeenCalledWith(
       ['current-user', 'peer-user'],
-      message,
+      { ...message, readByPeer: false },
     );
   });
 
@@ -226,6 +274,66 @@ describe('ChatsService', () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
+  it('returns message read status from the peer cursor using message order', async () => {
+    const createdAt = new Date('2026-09-13T10:00:00.000Z');
+    const participant = participantQuery([{ id: 'chat-id' }]);
+    const history = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockResolvedValue([
+        {
+          id: 'message-before-cursor',
+          chatId: 'chat-id',
+          senderId: 'current-user',
+          text: 'Before',
+          createdAt,
+          updatedAt: createdAt,
+          readByPeer: true,
+        },
+        {
+          id: 'message-after-cursor',
+          chatId: 'chat-id',
+          senderId: 'current-user',
+          text: 'After',
+          createdAt,
+          updatedAt: createdAt,
+          readByPeer: false,
+        },
+      ]),
+    };
+    const select = jest
+      .fn()
+      .mockReturnValueOnce(participant)
+      .mockReturnValueOnce(history);
+    const service = new ChatsService(
+      { db: { select } } as unknown as DatabaseService,
+      gateway,
+    );
+
+    await expect(
+      service.getMessages('current-user', 'chat-id'),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'message-before-cursor',
+        readByPeer: true,
+      }),
+      expect.objectContaining({
+        id: 'message-after-cursor',
+        readByPeer: false,
+      }),
+    ]);
+
+    const readByPeer = select.mock.calls[1][0].readByPeer;
+    const query = new PgDialect().sqlToQuery(readByPeer);
+    expect(query.sql).toContain('"peer_last_read_message"');
+    expect(query.sql).toContain('< "peer_last_read_message"."createdAt"');
+    expect(query.sql).toContain('<= "peer_last_read_message"."id"');
+    expect(history.innerJoin).toHaveBeenCalled();
+    expect(history.leftJoin).toHaveBeenCalled();
+  });
+
   it('does not publish a message when its transaction fails', async () => {
     const publishMessageCreated = jest.fn();
     const service = new ChatsService(
@@ -254,15 +362,28 @@ describe('ChatsService', () => {
       set: jest.fn().mockReturnThis(),
       where: jest.fn().mockResolvedValue(undefined),
     };
+    const participantRows = {
+      from: jest.fn().mockReturnThis(),
+      where: jest
+        .fn()
+        .mockResolvedValue([
+          { userId: 'current-user' },
+          { userId: 'peer-user' },
+        ]),
+    };
     const tx = {
       select: jest
         .fn()
         .mockReturnValueOnce(participantLockQuery)
         .mockReturnValueOnce(readCursorQuery)
-        .mockReturnValueOnce(targetMessageQuery),
+        .mockReturnValueOnce(targetMessageQuery)
+        .mockReturnValueOnce(participantRows),
       update: jest.fn().mockReturnValue(update),
     };
-    const service = serviceWithTransaction(tx, gateway);
+    const publishMessageRead = jest.fn();
+    const service = serviceWithTransaction(tx, {
+      publishMessageRead,
+    } as unknown as ChatsGateway);
 
     await expect(
       service.markRead(
@@ -276,6 +397,15 @@ describe('ChatsService', () => {
     expect(update.set).toHaveBeenCalledWith({
       lastReadMessageId: '11111111-1111-1111-1111-111111111111',
     });
+    expect(publishMessageRead).toHaveBeenCalledWith(
+      ['current-user', 'peer-user'],
+      {
+        chatId: 'chat-id',
+        readerId: 'current-user',
+        messageId: '11111111-1111-1111-1111-111111111111',
+        messageCreatedAt: '2026-09-13T10:01:00.000Z',
+      },
+    );
   });
 
   it('does not rewind an existing read cursor', async () => {
@@ -300,7 +430,10 @@ describe('ChatsService', () => {
         .mockReturnValueOnce(currentMessageQuery),
       update: jest.fn(),
     };
-    const service = serviceWithTransaction(tx, gateway);
+    const publishMessageRead = jest.fn();
+    const service = serviceWithTransaction(tx, {
+      publishMessageRead,
+    } as unknown as ChatsGateway);
 
     await service.markRead(
       'current-user',
@@ -309,6 +442,7 @@ describe('ChatsService', () => {
     );
 
     expect(tx.update).not.toHaveBeenCalled();
+    expect(publishMessageRead).not.toHaveBeenCalled();
   });
 
   it.each([undefined, 'not-a-uuid', 1])(
@@ -348,6 +482,27 @@ describe('ChatsService', () => {
         '11111111-1111-1111-1111-111111111111',
       ),
     ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('does not publish a read event when the transaction fails', async () => {
+    const publishMessageRead = jest.fn();
+    const service = new ChatsService(
+      {
+        db: {
+          transaction: jest.fn().mockRejectedValue(new Error('database error')),
+        },
+      } as unknown as DatabaseService,
+      { publishMessageRead } as unknown as ChatsGateway,
+    );
+
+    await expect(
+      service.markRead(
+        'current-user',
+        'chat-id',
+        '11111111-1111-1111-1111-111111111111',
+      ),
+    ).rejects.toThrow('database error');
+    expect(publishMessageRead).not.toHaveBeenCalled();
   });
 });
 

@@ -5,6 +5,7 @@ import 'package:chatly/services/chat_realtime_service.dart';
 
 class FakeChatRealtime implements ChatRealtime {
   late final StreamController<ChatMessage> _messagesController;
+  late final StreamController<MessageReadEvent> _messageReadsController;
   late final StreamController<TypingChangedEvent> _typingChangesController;
   late final StreamController<FriendshipChangedEvent>
   _friendshipChangesController;
@@ -12,6 +13,8 @@ class FakeChatRealtime implements ChatRealtime {
   late final StreamController<Set<String>> _onlineUserIdsChangesController;
   int messageSubscriptions = 0;
   int messageCancellations = 0;
+  int messageReadSubscriptions = 0;
+  int messageReadCancellations = 0;
   int typingChangesSubscriptions = 0;
   int typingChangesCancellations = 0;
   int friendshipChangesSubscriptions = 0;
@@ -31,6 +34,10 @@ class FakeChatRealtime implements ChatRealtime {
     _messagesController = StreamController<ChatMessage>.broadcast(
       onListen: () => messageSubscriptions++,
       onCancel: () => messageCancellations++,
+    );
+    _messageReadsController = StreamController<MessageReadEvent>.broadcast(
+      onListen: () => messageReadSubscriptions++,
+      onCancel: () => messageReadCancellations++,
     );
     _typingChangesController = StreamController<TypingChangedEvent>.broadcast(
       onListen: () => typingChangesSubscriptions++,
@@ -53,6 +60,9 @@ class FakeChatRealtime implements ChatRealtime {
 
   @override
   Stream<ChatMessage> get messages => _messagesController.stream;
+
+  @override
+  Stream<MessageReadEvent> get messageReads => _messageReadsController.stream;
 
   @override
   Stream<TypingChangedEvent> get typingChanges =>
@@ -95,6 +105,9 @@ class FakeChatRealtime implements ChatRealtime {
   }
 
   void addMessage(ChatMessage message) => _messagesController.add(message);
+
+  void addMessageRead(MessageReadEvent event) =>
+      _messageReadsController.add(event);
 
   void signalConnected() => _connectedController.add(null);
 

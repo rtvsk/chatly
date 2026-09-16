@@ -14,16 +14,23 @@ import { Server, Socket } from 'socket.io';
 import { FriendsService } from '../friendships/friends.service';
 import { FriendshipRealtimePublisher } from '../realtime/friendship-realtime.publisher';
 import { userRoom } from '../realtime/user-room';
-import type { ChatMessage } from './chats.service';
+import type { ChatMessageResponse } from './chats.service';
 
 type AccessTokenPayload = {
   sub: string;
   login: string;
 };
 
-type MessageCreatedEvent = Omit<ChatMessage, 'createdAt' | 'updatedAt'> & {
-  createdAt: string;
-  updatedAt: string;
+type MessageCreatedEvent = Omit<
+  ChatMessageResponse,
+  'createdAt' | 'updatedAt'
+> & { createdAt: string; updatedAt: string };
+
+type MessageReadEvent = {
+  chatId: string;
+  readerId: string;
+  messageId: string;
+  messageCreatedAt: string;
 };
 
 export { userRoom } from '../realtime/user-room';
@@ -187,7 +194,7 @@ export class ChatsGateway
 
   publishMessageCreated(
     participantIds: readonly string[],
-    message: ChatMessage,
+    message: ChatMessageResponse,
   ): void {
     const payload: MessageCreatedEvent = {
       ...message,
@@ -197,6 +204,15 @@ export class ChatsGateway
 
     for (const participantId of new Set(participantIds)) {
       this.server.to(userRoom(participantId)).emit('message.created', payload);
+    }
+  }
+
+  publishMessageRead(
+    participantIds: readonly string[],
+    payload: MessageReadEvent,
+  ): void {
+    for (const participantId of new Set(participantIds)) {
+      this.server.to(userRoom(participantId)).emit('message.read', payload);
     }
   }
 

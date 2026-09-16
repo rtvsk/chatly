@@ -16,6 +16,43 @@ class TypingChangedEvent {
   final bool isTyping;
 }
 
+class MessageReadEvent {
+  const MessageReadEvent({
+    required this.chatId,
+    required this.readerId,
+    required this.messageId,
+    required this.messageCreatedAt,
+  });
+
+  final String chatId;
+  final String readerId;
+  final String messageId;
+  final DateTime messageCreatedAt;
+
+  static MessageReadEvent? tryParse(Map<dynamic, dynamic> payload) {
+    final chatId = payload['chatId'];
+    final readerId = payload['readerId'];
+    final messageId = payload['messageId'];
+    final messageCreatedAt = payload['messageCreatedAt'];
+    if (chatId is! String ||
+        readerId is! String ||
+        messageId is! String ||
+        messageCreatedAt is! String) {
+      return null;
+    }
+
+    final createdAt = DateTime.tryParse(messageCreatedAt);
+    if (createdAt == null) return null;
+
+    return MessageReadEvent(
+      chatId: chatId,
+      readerId: readerId,
+      messageId: messageId,
+      messageCreatedAt: createdAt,
+    );
+  }
+}
+
 enum FriendshipChangeType {
   requestCreated('request_created'),
   requestAccepted('request_accepted'),
@@ -42,6 +79,9 @@ class FriendshipChangedEvent {
 
 abstract interface class ChatRealtime {
   Stream<ChatMessage> get messages;
+
+  /// Broadcasts validated read-receipt cursors received from the server.
+  Stream<MessageReadEvent> get messageReads;
 
   /// Broadcasts validated typing-state changes received from other users.
   Stream<TypingChangedEvent> get typingChanges;
@@ -86,6 +126,8 @@ class ChatRealtimeService implements ChatRealtime {
   _socketFactory;
   final StreamController<ChatMessage> _messages =
       StreamController<ChatMessage>.broadcast();
+  final StreamController<MessageReadEvent> _messageReads =
+      StreamController<MessageReadEvent>.broadcast();
   final StreamController<TypingChangedEvent> _typingChanges =
       StreamController<TypingChangedEvent>.broadcast();
   final StreamController<FriendshipChangedEvent> _friendshipChanges =
@@ -103,6 +145,9 @@ class ChatRealtimeService implements ChatRealtime {
 
   @override
   Stream<ChatMessage> get messages => _messages.stream;
+
+  @override
+  Stream<MessageReadEvent> get messageReads => _messageReads.stream;
 
   @override
   Stream<TypingChangedEvent> get typingChanges => _typingChanges.stream;
@@ -172,6 +217,12 @@ class ChatRealtimeService implements ChatRealtime {
       } catch (_) {
         // Malformed realtime payloads must not terminate the authenticated UI.
       }
+    });
+    socket.on('message.read', (payload) {
+      if (!_isCurrent(generation, socket) || payload is! Map) return;
+
+      final event = MessageReadEvent.tryParse(payload);
+      if (event != null) _messageReads.add(event);
     });
     socket.on('typing.changed', (payload) {
       if (!_isCurrent(generation, socket) || payload is! Map) return;

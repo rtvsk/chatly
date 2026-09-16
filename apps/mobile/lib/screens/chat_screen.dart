@@ -31,6 +31,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final Set<String> _messageIds = {};
   late final ChatRealtime _realtimeService;
   StreamSubscription<ChatMessage>? _messagesSubscription;
+  StreamSubscription<MessageReadEvent>? _messageReadsSubscription;
   StreamSubscription<TypingChangedEvent>? _typingChangesSubscription;
   StreamSubscription<void>? _connectedSubscription;
   StreamSubscription<Set<String>>? _onlineUserIdsSubscription;
@@ -51,6 +52,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _realtimeService = widget.realtimeService ?? ChatRealtimeService.instance;
     _messagesSubscription = _realtimeService.messages.listen(
       _onRealtimeMessage,
+    );
+    _messageReadsSubscription = _realtimeService.messageReads.listen(
+      _onRealtimeMessageRead,
     );
     _typingChangesSubscription = _realtimeService.typingChanges.listen((event) {
       if (event.userId == widget.chat.peer.id) _onTypingChanged(event);
@@ -80,6 +84,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _peerTypingWatchdog?.cancel();
     _stopTyping();
     _messagesSubscription?.cancel();
+    _messageReadsSubscription?.cancel();
     _typingChangesSubscription?.cancel();
     _connectedSubscription?.cancel();
     _onlineUserIdsSubscription?.cancel();
@@ -97,6 +102,36 @@ class _ChatScreenState extends State<ChatScreen> {
       _scrollToBottom();
     }
     if (added) _markLatestMessageRead();
+  }
+
+  void _onRealtimeMessageRead(MessageReadEvent event) {
+    if (!mounted ||
+        event.chatId != widget.chat.id ||
+        event.readerId != widget.chat.peer.id) {
+      return;
+    }
+
+    final updates = <int, ChatMessage>{};
+    for (var index = 0; index < _messages.length; index++) {
+      final message = _messages[index];
+      if (message.senderId == widget.chat.peer.id ||
+          message.readByPeer ||
+          _compareMessageCursor(message, event) > 0) {
+        continue;
+      }
+
+      updates[index] = message.copyWith(readByPeer: true);
+    }
+    if (updates.isEmpty) return;
+
+    setState(() {
+      updates.forEach((index, message) => _messages[index] = message);
+    });
+  }
+
+  int _compareMessageCursor(ChatMessage message, MessageReadEvent cursor) {
+    final byDate = message.createdAt.compareTo(cursor.messageCreatedAt);
+    return byDate != 0 ? byDate : message.id.compareTo(cursor.messageId);
   }
 
   void _onTypingChanged(TypingChangedEvent event) {
@@ -416,12 +451,25 @@ class _MessageBubble extends StatelessWidget {
           color: isMine ? colors.primary : colors.secondaryContainer,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Text(
-          message.text,
-          style: TextStyle(
-            color: isMine ? colors.onPrimary : colors.onSecondaryContainer,
-          ),
-        ),
+        child: isMine
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(message.text, style: TextStyle(color: colors.onPrimary)),
+                  const SizedBox(height: 2),
+                  Icon(
+                    Icons.check,
+                    key: Key('message-read-receipt-${message.id}'),
+                    size: 14,
+                    color: message.readByPeer ? Colors.blue : Colors.grey,
+                  ),
+                ],
+              )
+            : Text(
+                message.text,
+                style: TextStyle(color: colors.onSecondaryContainer),
+              ),
       ),
     );
   }

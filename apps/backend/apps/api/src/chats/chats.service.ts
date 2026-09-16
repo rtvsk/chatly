@@ -28,6 +28,10 @@ export type ChatMessage = {
   updatedAt: Date;
 };
 
+export type ChatMessageResponse = ChatMessage & {
+  readByPeer: boolean;
+};
+
 export type ChatSummary = {
   id: string;
   type: 'direct';
@@ -36,7 +40,7 @@ export type ChatSummary = {
     login: string;
     avatarUrl: string | null;
   };
-  lastMessage: ChatMessage | null;
+  lastMessage: ChatMessageResponse | null;
   unreadCount: number;
   createdAt: Date;
   updatedAt: Date;
@@ -53,6 +57,7 @@ type ChatSummaryRow = {
   lastMessageText: string | null;
   lastMessageCreatedAt: Date | null;
   lastMessageUpdatedAt: Date | null;
+  lastMessageReadByPeer: boolean;
   unreadCount: number;
   createdAt: Date;
   updatedAt: Date;
@@ -64,6 +69,7 @@ const peerUser = alias(users, 'chat_peer');
 const peerAvatar = alias(avatars, 'chat_peer_avatar');
 const unreadMessage = alias(messages, 'unread_chat_message');
 const lastReadMessage = alias(messages, 'last_read_chat_message');
+const peerLastReadMessage = alias(messages, 'peer_last_read_message');
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -87,6 +93,7 @@ export class ChatsService {
         lastMessageText: messages.text,
         lastMessageCreatedAt: messages.createdAt,
         lastMessageUpdatedAt: messages.updatedAt,
+        lastMessageReadByPeer: this.readByPeerSql(),
         unreadCount: this.unreadCountSql(userId),
         createdAt: chats.createdAt,
         updatedAt: chats.updatedAt,
@@ -117,6 +124,13 @@ export class ChatsService {
       .leftJoin(
         messages,
         sql`${chats.lastMessageId} = cast(${messages.id} as text)`,
+      )
+      .leftJoin(
+        peerLastReadMessage,
+        and(
+          eq(peerLastReadMessage.chatId, messages.chatId),
+          sql`${peerParticipant.lastReadMessageId} = cast(${peerLastReadMessage.id} as text)`,
+        ),
       )
       .where(eq(chats.type, 'direct'))
       .orderBy(desc(chats.updatedAt));
@@ -198,7 +212,7 @@ export class ChatsService {
     userId: string,
     chatId: string,
     afterMessageId?: string,
-  ): Promise<ChatMessage[]> {
+  ): Promise<ChatMessageResponse[]> {
     await this.assertParticipant(this.database.db, userId, chatId);
 
     let afterMessage: Pick<ChatMessage, 'id' | 'createdAt'> | undefined;
@@ -226,8 +240,23 @@ export class ChatsService {
         text: messages.text,
         createdAt: messages.createdAt,
         updatedAt: messages.updatedAt,
+        readByPeer: this.readByPeerSql(),
       })
       .from(messages)
+      .innerJoin(
+        peerParticipant,
+        and(
+          eq(peerParticipant.chatId, messages.chatId),
+          ne(peerParticipant.userId, userId),
+        ),
+      )
+      .leftJoin(
+        peerLastReadMessage,
+        and(
+          eq(peerLastReadMessage.chatId, messages.chatId),
+          sql`${peerParticipant.lastReadMessageId} = cast(${peerLastReadMessage.id} as text)`,
+        ),
+      )
       .where(
         afterMessage
           ? and(
@@ -249,7 +278,7 @@ export class ChatsService {
     userId: string,
     chatId: string,
     text: unknown,
-  ): Promise<ChatMessage> {
+  ): Promise<ChatMessageResponse> {
     if (typeof text !== 'string') {
       throw new BadRequestException('Message text is required');
     }
@@ -293,9 +322,10 @@ export class ChatsService {
         };
       },
     );
-    this.chatsGateway.publishMessageCreated(participantIds, message);
+    const response = { ...message, readByPeer: false };
+    this.chatsGateway.publishMessageCreated(participantIds, response);
 
-    return message;
+    return response;
   }
 
   async markRead(
@@ -307,7 +337,7 @@ export class ChatsService {
       throw new BadRequestException('A valid message ID is required');
     }
 
-    await this.database.db.transaction(async (tx) => {
+    const readEvent = await this.database.db.transaction(async (tx) => {
       await this.assertParticipant(tx, userId, chatId, true);
 
       const [participant] = await tx
@@ -363,8 +393,32 @@ export class ChatsService {
               eq(chatParticipants.userId, userId),
             ),
           );
+
+        const participants = await tx
+          .select({ userId: chatParticipants.userId })
+          .from(chatParticipants)
+          .where(eq(chatParticipants.chatId, chatId));
+
+        return {
+          participantIds: participants.map((participant) => participant.userId),
+          payload: {
+            chatId,
+            readerId: userId,
+            messageId: targetMessage.id,
+            messageCreatedAt: targetMessage.createdAt.toISOString(),
+          },
+        };
       }
+
+      return null;
     });
+
+    if (readEvent) {
+      this.chatsGateway.publishMessageRead(
+        readEvent.participantIds,
+        readEvent.payload,
+      );
+    }
   }
 
   private assertNotSelf(userId: string, peerId: string): void {
@@ -452,6 +506,7 @@ export class ChatsService {
         lastMessageText: messages.text,
         lastMessageCreatedAt: messages.createdAt,
         lastMessageUpdatedAt: messages.updatedAt,
+        lastMessageReadByPeer: this.readByPeerSql(),
         unreadCount: this.unreadCountSql(userId),
         createdAt: chats.createdAt,
         updatedAt: chats.updatedAt,
@@ -482,6 +537,13 @@ export class ChatsService {
       .leftJoin(
         messages,
         sql`${chats.lastMessageId} = cast(${messages.id} as text)`,
+      )
+      .leftJoin(
+        peerLastReadMessage,
+        and(
+          eq(peerLastReadMessage.chatId, messages.chatId),
+          sql`${peerParticipant.lastReadMessageId} = cast(${peerLastReadMessage.id} as text)`,
+        ),
       )
       .where(and(eq(chats.id, chatId), eq(chats.type, 'direct')))
       .limit(1);
@@ -536,6 +598,7 @@ export class ChatsService {
             text: row.lastMessageText!,
             createdAt: row.lastMessageCreatedAt!,
             updatedAt: row.lastMessageUpdatedAt!,
+            readByPeer: row.lastMessageReadByPeer,
           }
         : null,
       unreadCount: row.unreadCount,
@@ -561,6 +624,23 @@ export class ChatsService {
           )
         )
     )`;
+  }
+
+  private readByPeerSql() {
+    return sql<boolean>`
+      case
+        when ${peerLastReadMessage.id} is not null
+          and (
+            ${messages.createdAt} < ${peerLastReadMessage.createdAt}
+            or (
+              ${messages.createdAt} = ${peerLastReadMessage.createdAt}
+              and ${messages.id} <= ${peerLastReadMessage.id}
+            )
+          )
+        then true
+        else false
+      end
+    `;
   }
 
   private isMessageAfter(

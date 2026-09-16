@@ -103,6 +103,7 @@ describe('ChatsGateway', () => {
       text: 'Hello',
       createdAt,
       updatedAt: createdAt,
+      readByPeer: false,
     });
 
     expect(to).toHaveBeenCalledTimes(2);
@@ -115,6 +116,35 @@ describe('ChatsGateway', () => {
       text: 'Hello',
       createdAt: '2026-09-13T10:00:00.000Z',
       updatedAt: '2026-09-13T10:00:00.000Z',
+      readByPeer: false,
+    });
+  });
+
+  it('publishes read receipts to every participant room once', () => {
+    const gateway = new ChatsGateway(
+      configService,
+      createFriendsService(),
+      createFriendshipRealtimePublisher(),
+    );
+    const emit = jest.fn();
+    const to = jest.fn().mockReturnValue({ emit });
+    (gateway as unknown as { server: { to: typeof to } }).server = { to };
+
+    gateway.publishMessageRead(['reader', 'peer', 'reader'], {
+      chatId: 'chat-id',
+      readerId: 'reader',
+      messageId: 'message-id',
+      messageCreatedAt: '2026-09-13T10:00:00.000Z',
+    });
+
+    expect(to).toHaveBeenCalledTimes(2);
+    expect(to).toHaveBeenNthCalledWith(1, userRoom('reader'));
+    expect(to).toHaveBeenNthCalledWith(2, userRoom('peer'));
+    expect(emit).toHaveBeenCalledWith('message.read', {
+      chatId: 'chat-id',
+      readerId: 'reader',
+      messageId: 'message-id',
+      messageCreatedAt: '2026-09-13T10:00:00.000Z',
     });
   });
 

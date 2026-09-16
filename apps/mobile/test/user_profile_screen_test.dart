@@ -82,6 +82,14 @@ void main() {
         ),
       ),
     );
+
+    await tester.pump(const Duration(milliseconds: 90));
+
+    final movingAvatar = tester.widget<Transform>(
+      find.byKey(const Key('user-profile-avatar-animation')),
+    );
+    expect(movingAvatar.transform.storage[1], isNot(closeTo(0, 0.0001)));
+
     await tester.pumpAndSettle();
 
     expect(find.text('dima'), findsOneWidget);
@@ -96,6 +104,25 @@ void main() {
 
     expect(service.requestedUserId, 'user-id');
     expect(find.text('Request sent'), findsOneWidget);
+  });
+
+  testWidgets('does not animate the fallback avatar', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UserProfileScreen(
+          user: const Contact(id: 'user-id', login: 'dima'),
+          friendsService: FakeFriendsService(),
+          chatsService: FakeChatsService(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('user-profile-avatar')), findsOneWidget);
+    expect(
+      find.byKey(const Key('user-profile-avatar-animation')),
+      findsNothing,
+    );
   });
 
   testWidgets('cancelling removal leaves the friendship unchanged', (

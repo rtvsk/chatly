@@ -111,6 +111,43 @@ void main() {
     expect(find.text('0'), findsNothing);
   });
 
+  testWidgets('shakes Chats once when the unread count increases', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildSubject(selectedIndex: 0, chatBadgeCount: 0));
+    await tester.pumpWidget(buildSubject(selectedIndex: 0, chatBadgeCount: 1));
+    await tester.pump(const Duration(milliseconds: 70));
+
+    var shake = tester.widget<Transform>(
+      find.byKey(const ValueKey('bottom-nav-chat-notification-shake')),
+    );
+    expect(shake.transform.storage[1], isNot(closeTo(0, 0.0001)));
+
+    await tester.pumpAndSettle();
+    shake = tester.widget<Transform>(
+      find.byKey(const ValueKey('bottom-nav-chat-notification-shake')),
+    );
+    expect(shake.transform.storage[1], closeTo(0, 0.0001));
+
+    await tester.pumpWidget(buildSubject(selectedIndex: 0, chatBadgeCount: 1));
+    await tester.pump(const Duration(milliseconds: 70));
+    shake = tester.widget<Transform>(
+      find.byKey(const ValueKey('bottom-nav-chat-notification-shake')),
+    );
+    expect(shake.transform.storage[1], closeTo(0, 0.0001));
+  });
+
+  testWidgets('does not shake Chats while it is selected', (tester) async {
+    await tester.pumpWidget(buildSubject(selectedIndex: 1, chatBadgeCount: 0));
+    await tester.pumpWidget(buildSubject(selectedIndex: 1, chatBadgeCount: 1));
+    await tester.pump(const Duration(milliseconds: 70));
+
+    final shake = tester.widget<Transform>(
+      find.byKey(const ValueKey('bottom-nav-chat-notification-shake')),
+    );
+    expect(shake.transform.storage[1], closeTo(0, 0.0001));
+  });
+
   testWidgets('keeps hidden destinations accessible', (tester) async {
     await tester.pumpWidget(buildSubject(selectedIndex: 1));
 

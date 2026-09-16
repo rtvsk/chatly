@@ -231,34 +231,6 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
-            // flexibleSpace: LayoutBuilder(
-            //   builder: (context, constraints) {
-            //     final collapsed =
-            //         constraints.biggest.height <= kToolbarHeight + 40;
-
-            //     return FlexibleSpaceBar(
-            //       centerTitle: true,
-            //       title: collapsed ? null : Text(userLogin),
-            //       background: SafeArea(
-            //         child: Padding(
-            //           padding: const EdgeInsets.only(top: 48),
-            //           child: Align(
-            //             alignment: Alignment.topCenter,
-            //             child: Column(
-            //               mainAxisSize: MainAxisSize.min,
-            //               children: const [
-            //                 CircleAvatar(
-            //                   radius: 34,
-            //                   child: Icon(Icons.person, size: 38),
-            //                 ),
-            //               ],
-            //             ),
-            //           ),
-            //         ),
-            //       ),
-            //     );
-            //   },
-            // ),
           ),
 
           SliverFillRemaining(

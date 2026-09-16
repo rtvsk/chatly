@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../constants.dart';
@@ -170,21 +172,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircleAvatar(
-                key: const Key('user-profile-avatar'),
-                radius: 76,
-                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                foregroundImage: widget.user.avatarUrl == null
-                    ? null
-                    : NetworkImage(
-                        '${Constants.baseUrl}${widget.user.avatarUrl}',
-                        headers: ApiService.instance.authorizationHeaders,
-                      ),
-                onForegroundImageError: widget.user.avatarUrl == null
-                    ? null
-                    : (_, _) {},
-                child: const Icon(Icons.person, size: 76),
-              ),
+              _buildAvatar(context),
               const SizedBox(height: 24),
               Text(
                 widget.user.login,
@@ -196,6 +184,40 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAvatar(BuildContext context) {
+    final avatarUrl = widget.user.avatarUrl;
+    final hasAvatar = avatarUrl?.isNotEmpty == true;
+    final avatar = CircleAvatar(
+      key: const Key('user-profile-avatar'),
+      radius: 76,
+      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+      foregroundImage: hasAvatar
+          ? NetworkImage(
+              '${Constants.baseUrl}$avatarUrl',
+              headers: ApiService.instance.authorizationHeaders,
+            )
+          : null,
+      onForegroundImageError: hasAvatar ? (_, _) {} : null,
+      child: const Icon(Icons.person, size: 76),
+    );
+
+    if (!hasAvatar) return avatar;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 720),
+      builder: (context, progress, child) {
+        final angle = math.sin(progress * math.pi * 4) * (1 - progress) * 0.055;
+        return Transform.rotate(
+          key: const Key('user-profile-avatar-animation'),
+          angle: angle,
+          child: child,
+        );
+      },
+      child: avatar,
     );
   }
 

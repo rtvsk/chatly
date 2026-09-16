@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 class ChatlyBottomNavigationBar extends StatelessWidget {
@@ -75,6 +77,7 @@ class ChatlyBottomNavigationBar extends StatelessWidget {
                       badgeSemanticLabel: index == 1
                           ? 'unread messages'
                           : 'notifications',
+                      animateOnBadgeIncrease: index == 1,
                       onTap: () => onDestinationSelected(index),
                     ),
                   ),
@@ -87,12 +90,13 @@ class ChatlyBottomNavigationBar extends StatelessWidget {
   }
 }
 
-class _ChatlyNavigationButton extends StatelessWidget {
+class _ChatlyNavigationButton extends StatefulWidget {
   const _ChatlyNavigationButton({
     required this.destination,
     required this.isSelected,
     required this.badgeCount,
     required this.badgeSemanticLabel,
+    required this.animateOnBadgeIncrease,
     required this.onTap,
   });
 
@@ -100,59 +104,126 @@ class _ChatlyNavigationButton extends StatelessWidget {
   final bool isSelected;
   final int badgeCount;
   final String badgeSemanticLabel;
+  final bool animateOnBadgeIncrease;
   final VoidCallback onTap;
+
+  @override
+  State<_ChatlyNavigationButton> createState() =>
+      _ChatlyNavigationButtonState();
+}
+
+class _ChatlyNavigationButtonState extends State<_ChatlyNavigationButton>
+    with SingleTickerProviderStateMixin {
+  static const _notificationAnimationDuration = Duration(milliseconds: 420);
+
+  late final AnimationController _notificationController;
+
+  @override
+  void initState() {
+    super.initState();
+    _notificationController = AnimationController(
+      duration: _notificationAnimationDuration,
+      vsync: this,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChatlyNavigationButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final animationsDisabled =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (widget.animateOnBadgeIncrease &&
+        !widget.isSelected &&
+        widget.badgeCount > oldWidget.badgeCount &&
+        !animationsDisabled) {
+      _notificationController.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _notificationController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
     Widget button = Semantics(
-      key: ValueKey('bottom-nav-${destination.label}'),
+      key: ValueKey('bottom-nav-${widget.destination.label}'),
       button: true,
-      selected: isSelected,
-      label: badgeCount > 0
-          ? '${destination.label}, $badgeCount $badgeSemanticLabel'
-          : destination.label,
-      onTap: onTap,
+      selected: widget.isSelected,
+      label: widget.badgeCount > 0
+          ? '${widget.destination.label}, ${widget.badgeCount} ${widget.badgeSemanticLabel}'
+          : widget.destination.label,
+      onTap: widget.onTap,
       child: ExcludeSemantics(
         child: Padding(
           padding: const EdgeInsets.all(6),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: onTap,
+              onTap: widget.onTap,
               borderRadius: BorderRadius.circular(26),
               child: Center(
                 child: AnimatedContainer(
-                  key: ValueKey('bottom-nav-capsule-${destination.label}'),
+                  key: ValueKey(
+                    'bottom-nav-capsule-${widget.destination.label}',
+                  ),
                   duration: ChatlyBottomNavigationBar._animationDuration,
                   curve: Curves.easeOutCubic,
                   width: 52,
                   height: 52,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: isSelected
+                    color: widget.isSelected
                         ? colorScheme.primaryContainer
                         : Colors.transparent,
                     shape: BoxShape.circle,
                   ),
-                  child: AnimatedSwitcher(
-                    duration: ChatlyBottomNavigationBar._animationDuration,
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeOutCubic,
-                    child: Badge.count(
-                      key: ValueKey('$isSelected-$badgeCount'),
-                      count: badgeCount,
-                      isLabelVisible: badgeCount > 0,
-                      backgroundColor: Colors.red,
-                      child: Icon(
-                        isSelected
-                            ? destination.selectedIcon
-                            : destination.icon,
-                        size: isSelected ? 30 : 28,
-                        color: isSelected
-                            ? colorScheme.primary
-                            : colorScheme.onSurfaceVariant,
+                  child: AnimatedBuilder(
+                    animation: _notificationController,
+                    builder: (context, child) {
+                      final progress = _notificationController.value;
+                      final angle =
+                          math.sin(progress * math.pi * 4) *
+                          (1 - progress) *
+                          0.11;
+                      final scale = 1 + math.sin(progress * math.pi) * 0.08;
+                      return Transform.scale(
+                        scale: scale,
+                        child: Transform.rotate(
+                          key: widget.animateOnBadgeIncrease
+                              ? const ValueKey(
+                                  'bottom-nav-chat-notification-shake',
+                                )
+                              : null,
+                          angle: angle,
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: AnimatedSwitcher(
+                      duration: ChatlyBottomNavigationBar._animationDuration,
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeOutCubic,
+                      child: Badge.count(
+                        key: ValueKey(
+                          '${widget.isSelected}-${widget.badgeCount}',
+                        ),
+                        count: widget.badgeCount,
+                        isLabelVisible: widget.badgeCount > 0,
+                        backgroundColor: Colors.red,
+                        child: Icon(
+                          widget.isSelected
+                              ? widget.destination.selectedIcon
+                              : widget.destination.icon,
+                          size: widget.isSelected ? 30 : 28,
+                          color: widget.isSelected
+                              ? colorScheme.primary
+                              : colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ),
@@ -165,7 +236,7 @@ class _ChatlyNavigationButton extends StatelessWidget {
     );
 
     return Tooltip(
-      message: destination.label,
+      message: widget.destination.label,
       excludeFromSemantics: true,
       child: button,
     );

@@ -7,7 +7,11 @@ import {
   RmqOptions,
   Transport,
 } from '@nestjs/microservices';
-import { DEFAULT_MAIL_DLQ, DEFAULT_MAIL_QUEUE } from '@app/contracts';
+import {
+  DEFAULT_MAIL_DLQ,
+  DEFAULT_MAIL_QUEUE,
+  MAIL_RETRY_DELAYS_MS,
+} from '@app/contracts';
 
 import { MailServiceModule } from './mail-service.module';
 import { ensureRabbitTopology } from './rabbit-topology';
@@ -48,7 +52,12 @@ async function bootstrap(): Promise<void> {
     },
   };
 
-  await ensureRabbitTopology({ url, queue, deadLetterQueue });
+  await ensureRabbitTopology({
+    url,
+    queue,
+    deadLetterQueue,
+    retryDelaysMs: MAIL_RETRY_DELAYS_MS,
+  });
 
   const app = await NestFactory.createMicroservice<MicroserviceOptions>(
     MailServiceModule,

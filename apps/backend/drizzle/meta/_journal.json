@@ -29,6 +29,13 @@
       "when": 1789300000000,
       "tag": "0003_mark_existing_chat_messages_read",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789561495459,
+      "tag": "0004_public_human_robot",
+      "breakpoints": true
     }
   ]
 }

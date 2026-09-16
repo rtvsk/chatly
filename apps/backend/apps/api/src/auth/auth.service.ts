@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { MAIL_SEND_PATTERN } from '@app/contracts';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { and, eq, gt, lt, or, sql } from 'drizzle-orm';
@@ -15,6 +16,7 @@ import { and, eq, gt, lt, or, sql } from 'drizzle-orm';
 import { DatabaseService } from '../database/database.service';
 import {
   emailVerificationTokens,
+  outboxEvents,
   refreshTokens,
   type User,
   users,
@@ -22,7 +24,7 @@ import {
 import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { SigninDto } from './dto/signin.dto';
 import { SignupDto } from './dto/signup.dto';
-import { MailPublisher } from './mail.publisher';
+import { OutboxDispatcherService } from './outbox-dispatcher.service';
 
 const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
 const TOKEN_LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -34,7 +36,7 @@ export class AuthService {
     private readonly database: DatabaseService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly mailPublisher: MailPublisher,
+    private readonly outboxDispatcher: OutboxDispatcherService,
   ) {}
 
   async signup(dto: SignupDto) {
@@ -57,17 +59,29 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     let user: User;
+    let outboxEventId: string;
 
     try {
-      [user] = await this.database.db
-        .insert(users)
-        .values({
-          login: dto.login,
-          email,
-          passwordHash,
-          isVerified: false,
-        })
-        .returning();
+      ({ user, outboxEventId } = await this.database.db.transaction(
+        async (tx) => {
+          const [createdUser] = await tx
+            .insert(users)
+            .values({
+              login: dto.login,
+              email,
+              passwordHash,
+              isVerified: false,
+            })
+            .returning();
+          const verification = this.buildVerification(createdUser);
+          await tx.insert(emailVerificationTokens).values(verification.token);
+          await tx.insert(outboxEvents).values(verification.outbox);
+          return {
+            user: createdUser,
+            outboxEventId: verification.outbox.id,
+          };
+        },
+      ));
     } catch (error) {
       if (this.isUniqueViolation(error)) {
         throw new ConflictException('User already exists');
@@ -76,7 +90,14 @@ export class AuthService {
       throw error;
     }
 
-    const delivery = await this.createAndDeliverVerification(user);
+    let delivery: 'sent' | 'pending' = 'pending';
+    try {
+      if (await this.outboxDispatcher.dispatchNow(outboxEventId)) {
+        delivery = 'sent';
+      }
+    } catch {
+      // The committed outbox row remains available to the background poller.
+    }
 
     return {
       status: 'verification_required' as const,
@@ -209,58 +230,66 @@ export class AuthService {
       return;
     }
 
-    const [user] = await this.database.db
-      .select()
-      .from(users)
-      .where(
-        and(sql`lower(${users.email}) = ${email}`, eq(users.isVerified, false)),
-      )
-      .limit(1);
+    const outboxEventId = await this.database.db.transaction(async (tx) => {
+      const lockedUser = await tx.execute(sql`
+        SELECT "id", "email"
+        FROM "users"
+        WHERE lower("email") = ${email} AND "isVerified" = false
+        LIMIT 1
+        FOR UPDATE
+      `);
+      const user = lockedUser.rows[0] as Pick<User, 'id' | 'email'> | undefined;
 
-    if (!user) {
-      return;
-    }
+      if (!user) {
+        return undefined;
+      }
 
-    const now = new Date();
-    await this.database.db
-      .delete(emailVerificationTokens)
-      .where(
-        and(
-          eq(emailVerificationTokens.userId, user.id),
-          lt(emailVerificationTokens.expiresAt, now),
-        ),
-      );
-
-    const [recentToken] = await this.database.db
-      .select({ id: emailVerificationTokens.id })
-      .from(emailVerificationTokens)
-      .where(
-        and(
-          eq(emailVerificationTokens.userId, user.id),
-          gt(
-            emailVerificationTokens.createdAt,
-            new Date(now.getTime() - RESEND_COOLDOWN_MS),
+      const now = new Date();
+      await tx
+        .delete(emailVerificationTokens)
+        .where(
+          and(
+            eq(emailVerificationTokens.userId, user.id),
+            lt(emailVerificationTokens.expiresAt, now),
           ),
-        ),
-      )
-      .limit(1);
+        );
 
-    if (recentToken) {
-      return;
-    }
+      const [recentToken] = await tx
+        .select({ id: emailVerificationTokens.id })
+        .from(emailVerificationTokens)
+        .where(
+          and(
+            eq(emailVerificationTokens.userId, user.id),
+            gt(
+              emailVerificationTokens.createdAt,
+              new Date(now.getTime() - RESEND_COOLDOWN_MS),
+            ),
+          ),
+        )
+        .limit(1);
 
-    try {
-      await this.createAndDeliverVerification(user);
-    } catch {
-      // The resend endpoint deliberately does not reveal delivery failures.
+      if (recentToken) {
+        return undefined;
+      }
+
+      const verification = this.buildVerification(user);
+      await tx.insert(emailVerificationTokens).values(verification.token);
+      await tx.insert(outboxEvents).values(verification.outbox);
+      return verification.outbox.id;
+    });
+
+    if (outboxEventId) {
+      try {
+        await this.outboxDispatcher.dispatchNow(outboxEventId);
+      } catch {
+        // The resend endpoint deliberately does not reveal delivery failures.
+      }
     }
   }
 
-  private async createAndDeliverVerification(
-    user: User,
-  ): Promise<'sent' | 'pending'> {
+  private buildVerification(user: Pick<User, 'id' | 'email'>) {
     if (!user.email) {
-      return 'pending';
+      throw new Error('Verification email is required');
     }
 
     const rawToken = randomBytes(32).toString('base64url');
@@ -269,40 +298,28 @@ export class AuthService {
     );
     verificationUrl.searchParams.set('token', rawToken);
     const expiresAt = new Date(Date.now() + TOKEN_LIFETIME_MS);
-    const [verificationToken] = await this.database.db
-      .insert(emailVerificationTokens)
-      .values({
+    const eventId = randomUUID();
+    const expiresAtIso = expiresAt.toISOString();
+
+    return {
+      token: {
         userId: user.id,
         tokenDigest: this.digestToken(rawToken),
         expiresAt,
-      })
-      .returning({ id: emailVerificationTokens.id });
-
-    console.log({ verificationToken });
-
-    try {
-      await this.mailPublisher.publishVerification({
-        eventId: randomUUID(),
-        to: user.email,
-        template: 'email-verification',
-        context: { verificationUrl: verificationUrl.toString() },
-      });
-
-      console.log('sent');
-
-      return 'sent';
-    } catch {
-      try {
-        await this.database.db
-          .delete(emailVerificationTokens)
-          .where(eq(emailVerificationTokens.id, verificationToken.id));
-        console.log(2);
-      } catch {
-        // Delivery remains pending even if best-effort cleanup is unavailable.
-      }
-
-      return 'pending';
-    }
+      },
+      outbox: {
+        id: eventId,
+        topic: MAIL_SEND_PATTERN,
+        expiresAt,
+        payload: {
+          eventId,
+          to: user.email,
+          template: 'email-verification',
+          expiresAt: expiresAtIso,
+          context: { verificationUrl: verificationUrl.toString() },
+        },
+      },
+    };
   }
 
   private normalizeEmail(value: string): string {

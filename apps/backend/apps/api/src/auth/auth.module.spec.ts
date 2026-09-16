@@ -9,15 +9,30 @@ import { MAIL_CLIENT } from './mail.publisher';
 
 describe('AuthModule mail publisher', () => {
   it('declares the mail queue with the same DLQ arguments as the consumer', () => {
-    const providers = Reflect.getMetadata(
+    const providers: unknown = Reflect.getMetadata(
       MODULE_METADATA.PROVIDERS,
       AuthModule,
     );
-    const provider = providers.find(
-      (candidate: { provide?: symbol }) => candidate.provide === MAIL_CLIENT,
-    ) as {
-      useFactory: (configService: ConfigService) => unknown;
-    };
+    if (!Array.isArray(providers)) {
+      throw new Error('AuthModule providers metadata is missing');
+    }
+    const provider = (providers as unknown[]).find(
+      (
+        candidate,
+      ): candidate is {
+        provide: symbol;
+        useFactory: (configService: ConfigService) => unknown;
+      } =>
+        typeof candidate === 'object' &&
+        candidate !== null &&
+        'provide' in candidate &&
+        candidate.provide === MAIL_CLIENT &&
+        'useFactory' in candidate &&
+        typeof candidate.useFactory === 'function',
+    );
+    if (!provider) {
+      throw new Error('Mail client provider is missing');
+    }
     const create = jest
       .spyOn(ClientProxyFactory, 'create')
       .mockReturnValue({} as ReturnType<typeof ClientProxyFactory.create>);
@@ -33,6 +48,7 @@ describe('AuthModule mail publisher', () => {
       options: {
         urls: ['amqp://example.test'],
         queue: DEFAULT_MAIL_QUEUE,
+        persistent: true,
         queueOptions: {
           durable: true,
           arguments: {

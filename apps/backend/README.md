@@ -48,15 +48,17 @@ interface MailSendEvent {
   eventId: string;
   to: string;
   template: string;
+  expiresAt?: string; // Required for email-verification events.
   subject?: string;
   context: Record<string, unknown>;
 }
 ```
 
-The consumer declares both the durable main queue and `MAIL_DLQ` (default
-`mail.events.dlq`). Messages are manually acknowledged after successful SMTP
-delivery. Invalid messages, unsupported templates, and SMTP failures are
-rejected without requeue and routed to the DLQ.
+The consumer declares the durable main queue, retry queues with delays of 10
+seconds, 1 minute, and 5 minutes, and `MAIL_DLQ` (default `mail.events.dlq`).
+Messages are manually acknowledged after successful SMTP delivery. Temporary
+SMTP failures pass through the retry queues. Invalid, expired, and exhausted
+events are routed to the final DLQ.
 
 Supported templates are `google-link` and `email-verification`. The latter
 requires `context.verificationUrl` and sends a confirmation link to the event's
@@ -78,3 +80,19 @@ GMAIL_APP_PASSWORD=replace-with-a-google-app-password
 
 The Gmail account must have 2-Step Verification enabled, and the password must
 be a dedicated Google App Password rather than the account password.
+
+Signup and resend write verification events to `outbox_events` in the same
+database transaction as their user/token changes. The API attempts immediate
+delivery and also polls pending events once per second.
+
+The final DLQ is not consumed automatically. Redrive a specific event or a
+bounded batch only after fixing the underlying problem:
+
+```bash
+npm run mail:dlq:redrive -- --event-id EVENT_UUID
+npm run mail:dlq:redrive -- --limit 10
+```
+
+Expired verification events stay quarantined by default. Remove them only with
+the explicit `--discard-expired` option; users need a new link through the
+resend-verification endpoint.

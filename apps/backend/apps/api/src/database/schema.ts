@@ -1,6 +1,8 @@
 import {
   boolean,
+  index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -18,6 +20,13 @@ export const friendshipStatusEnum = pgEnum('friendships_status_enum', [
   'pending',
   'accepted',
   'rejected',
+]);
+
+export const outboxEventStatusEnum = pgEnum('outbox_event_status_enum', [
+  'pending',
+  'processing',
+  'published',
+  'dead',
 ]);
 
 export const users = pgTable(
@@ -54,6 +63,33 @@ export const emailVerificationTokens = pgTable(
     uniqueIndex('email_verification_tokens_user_created_idx').on(
       table.userId,
       table.createdAt,
+    ),
+  ],
+);
+
+export const outboxEvents = pgTable(
+  'outbox_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    topic: varchar('topic').notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>(),
+    status: outboxEventStatusEnum('status').default('pending').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    availableAt: timestamp('availableAt', { mode: 'date' })
+      .defaultNow()
+      .notNull(),
+    lockedUntil: timestamp('lockedUntil', { mode: 'date' }),
+    expiresAt: timestamp('expiresAt', { mode: 'date' }).notNull(),
+    publishedAt: timestamp('publishedAt', { mode: 'date' }),
+    lastError: text('lastError'),
+    createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('outbox_events_dispatch_idx').on(
+      table.status,
+      table.availableAt,
+      table.lockedUntil,
     ),
   ],
 );

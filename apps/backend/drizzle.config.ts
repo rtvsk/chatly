@@ -27,6 +27,7 @@ export default defineConfig({
     'users',
     'refresh_tokens',
     'email_verification_tokens',
+    'outbox_events',
     'chats',
     'chat_participants',
     'messages',

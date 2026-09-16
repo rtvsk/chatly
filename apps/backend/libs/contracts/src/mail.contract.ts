@@ -1,6 +1,12 @@
 export const MAIL_SEND_PATTERN = 'mail.send';
 export const DEFAULT_MAIL_QUEUE = 'mail.events';
 export const DEFAULT_MAIL_DLQ = 'mail.events.dlq';
+export const MAIL_RETRY_HEADER = 'x-mail-retry-count';
+export const MAIL_REDRIVE_HEADER = 'x-mail-redrive-count';
+export const MAIL_RETRY_DELAYS_MS = [10_000, 60_000, 300_000] as const;
+
+export const mailRetryQueueName = (queue: string, delayMs: number): string =>
+  `${queue}.retry.${delayMs}`;
 
 export interface GoogleLinkMailSendEvent {
   eventId: string;
@@ -14,6 +20,7 @@ export interface EmailVerificationMailSendEvent {
   eventId: string;
   to: string;
   template: 'email-verification';
+  expiresAt: string;
   subject?: string;
   context: {
     verificationUrl: string;
@@ -50,6 +57,8 @@ export const isMailSendEvent = (value: unknown): value is MailSendEvent => {
 
   return (
     value.template === 'email-verification' &&
+    isNonEmptyString(value.expiresAt) &&
+    !Number.isNaN(Date.parse(value.expiresAt)) &&
     isNonEmptyString(value.context.verificationUrl)
   );
 };

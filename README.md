@@ -171,6 +171,7 @@ baseline that database with `drizzle-kit pull --init` first.
   eventId: string;
   to: string;
   template: string;
+  expiresAt?: string; // Required for email-verification events.
   subject?: string;
   context: Record<string, unknown>;
 }
@@ -181,10 +182,21 @@ requires `context.verificationUrl` and is published by the API after signup.
 Gmail SMTP uses TLS on port `465` and requires `GMAIL_USER` plus a Google App
 Password in `GMAIL_APP_PASSWORD`.
 
-Successful events are acknowledged only after Gmail accepts the message.
-Invalid events, unsupported templates, and SMTP errors are rejected without
-requeue and routed to `MAIL_DLQ`. Never commit Gmail credentials or paste them
-into source files.
+Signup and resend persist mail events in `outbox_events` together with their
+database changes. The API retries RabbitMQ publication in the background.
+Successful mail events are acknowledged only after Gmail accepts the message.
+Temporary SMTP failures use durable 10-second, 1-minute, and 5-minute retry
+queues; invalid, expired, and exhausted events are routed to `MAIL_DLQ`.
+
+The final DLQ requires an explicit, bounded redrive:
+
+```bash
+cd apps/backend
+npm run mail:dlq:redrive -- --event-id EVENT_UUID
+npm run mail:dlq:redrive -- --limit 10
+```
+
+Never commit Gmail credentials or paste them into source files.
 
 ---
 

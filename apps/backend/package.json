@@ -19,6 +19,7 @@
     "start:mail-service": "nest start mail-service",
     "start:mail-service:dev": "nest start mail-service --watch",
     "start:mail-service:prod": "node dist/apps/mail-service/main.js",
+    "mail:dlq:redrive": "ts-node -r tsconfig-paths/register apps/mail-service/src/dlq-redrive.ts",
     "lint": "eslint \"{apps,libs}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",

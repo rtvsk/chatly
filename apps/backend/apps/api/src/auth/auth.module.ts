@@ -9,6 +9,7 @@ import { AuthService } from './auth.service';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './jwt.strategy';
 import { MAIL_CLIENT, MailPublisher } from './mail.publisher';
+import { OutboxDispatcherService } from './outbox-dispatcher.service';
 
 @Module({
   imports: [PassportModule, JwtModule.register({})],
@@ -17,6 +18,7 @@ import { MAIL_CLIENT, MailPublisher } from './mail.publisher';
     AuthService,
     JwtStrategy,
     MailPublisher,
+    OutboxDispatcherService,
     {
       provide: MAIL_CLIENT,
       inject: [ConfigService],
@@ -30,6 +32,7 @@ import { MAIL_CLIENT, MailPublisher } from './mail.publisher';
             urls: [configService.getOrThrow<string>('RABBITMQ_URL')],
             queue:
               configService.get<string>('MAIL_QUEUE') ?? DEFAULT_MAIL_QUEUE,
+            persistent: true,
             queueOptions: {
               durable: true,
               arguments: {

@@ -5,7 +5,7 @@ import * as bcrypt from 'bcrypt';
 
 import { DatabaseService } from '../database/database.service';
 import type { User } from '../database/schema';
-import { MailPublisher } from './mail.publisher';
+import { OutboxDispatcherService } from './outbox-dispatcher.service';
 import { AuthService } from './auth.service';
 
 const user = (overrides: Partial<User> = {}): User => ({
@@ -65,8 +65,14 @@ describe('AuthService', () => {
     const database = {
       db: { select: jest.fn(() => query) },
     } as unknown as DatabaseService;
-    const jwt = { signAsync: jest.fn() } as unknown as JwtService;
-    const service = new AuthService(database, jwt, config, {} as MailPublisher);
+    const signAsync = jest.fn();
+    const jwt = { signAsync } as unknown as JwtService;
+    const service = new AuthService(
+      database,
+      jwt,
+      config,
+      {} as OutboxDispatcherService,
+    );
 
     await expect(
       service.signin({ login: 'alice', password: 'correct-password' }),
@@ -77,39 +83,43 @@ describe('AuthService', () => {
         email: 'alice@example.com',
       },
     } satisfies Partial<HttpException>);
-    expect(jwt.signAsync).not.toHaveBeenCalled();
+    expect(signAsync).not.toHaveBeenCalled();
   });
 
-  it('normalizes email and reports pending delivery when publication fails', async () => {
+  it('atomically creates signup state and reports pending delivery', async () => {
     const existingUserQuery = selectReturning([]);
     const createdUser = user();
     const createUser = {
       returning: jest.fn().mockResolvedValue([createdUser]),
     };
-    const insertToken = {
-      values: jest.fn(() => ({
-        returning: jest.fn().mockResolvedValue([{ id: 'token-1' }]),
-      })),
-    };
-    const deleteWhere = jest.fn().mockResolvedValue(undefined);
+    const insertToken = { values: jest.fn().mockResolvedValue(undefined) };
+    const insertOutbox = { values: jest.fn().mockResolvedValue(undefined) };
+    const transactionInsert = jest
+      .fn()
+      .mockReturnValueOnce({ values: jest.fn(() => createUser) })
+      .mockReturnValueOnce(insertToken)
+      .mockReturnValueOnce(insertOutbox);
+    const transaction = jest.fn(
+      (
+        callback: (tx: { insert: jest.Mock }) => Promise<{
+          user: User;
+          outboxEventId: string;
+        }>,
+      ) => callback({ insert: transactionInsert }),
+    );
     const database = {
       db: {
         select: jest.fn(() => existingUserQuery),
-        insert: jest
-          .fn()
-          .mockReturnValueOnce({ values: jest.fn(() => createUser) })
-          .mockReturnValueOnce(insertToken),
-        delete: jest.fn(() => ({ where: deleteWhere })),
+        transaction,
       },
     } as unknown as DatabaseService;
-    const publisher = {
-      publishVerification: jest.fn().mockRejectedValue(new Error('offline')),
-    } as unknown as MailPublisher;
+    const dispatchNow = jest.fn().mockRejectedValue(new Error('offline'));
+    const dispatcher = { dispatchNow } as unknown as OutboxDispatcherService;
     const service = new AuthService(
       database,
       {} as JwtService,
       config,
-      publisher,
+      dispatcher,
     );
 
     await expect(
@@ -124,13 +134,29 @@ describe('AuthService', () => {
       delivery: 'pending',
       user: { email: 'alice@example.com', isVerified: false },
     });
-    expect(publisher.publishVerification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: 'alice@example.com',
-        template: 'email-verification',
-      }),
-    );
-    expect(deleteWhere).toHaveBeenCalledTimes(1);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    const tokenCalls = insertToken.values.mock.calls as unknown as [
+      [{ userId: string }],
+    ];
+    const outboxCalls = insertOutbox.values.mock.calls as unknown as [
+      [
+        {
+          id: string;
+          topic: string;
+          payload: { to: string; template: string; expiresAt: string };
+        },
+      ],
+    ];
+    const tokenValues = tokenCalls[0][0];
+    const outboxValues = outboxCalls[0][0];
+    expect(tokenValues.userId).toBe(createdUser.id);
+    expect(outboxValues.topic).toBe('mail.send');
+    expect(outboxValues.payload).toMatchObject({
+      to: 'alice@example.com',
+      template: 'email-verification',
+    });
+    expect(new Date(outboxValues.payload.expiresAt).getTime()).not.toBeNaN();
+    expect(dispatchNow).toHaveBeenCalledWith(outboxValues.id);
   });
 
   it('marks a valid verification token as used and verifies its user', async () => {
@@ -142,7 +168,10 @@ describe('AuthService', () => {
     ]);
     const where = jest.fn().mockResolvedValue(undefined);
     const update = jest.fn(() => ({ set: jest.fn(() => ({ where })) }));
-    const transaction = jest.fn(async (callback) => callback({ update }));
+    const transaction = jest.fn(
+      (callback: (tx: { update: typeof update }) => Promise<void>) =>
+        callback({ update }),
+    );
     const database = {
       db: { select: jest.fn(() => query), transaction },
     } as unknown as DatabaseService;
@@ -150,7 +179,7 @@ describe('AuthService', () => {
       database,
       {} as JwtService,
       config,
-      {} as MailPublisher,
+      {} as OutboxDispatcherService,
     );
 
     await expect(service.verifyEmail('valid-token')).resolves.toEqual({
@@ -175,7 +204,7 @@ describe('AuthService', () => {
       database,
       {} as JwtService,
       config,
-      {} as MailPublisher,
+      {} as OutboxDispatcherService,
     );
 
     await expect(service.verifyEmail('expired-token')).resolves.toEqual({
@@ -199,7 +228,7 @@ describe('AuthService', () => {
       database,
       {} as JwtService,
       config,
-      {} as MailPublisher,
+      {} as OutboxDispatcherService,
     );
 
     await expect(service.verifyEmail('used-token')).resolves.toEqual({

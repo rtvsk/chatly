@@ -55,6 +55,7 @@ describe('MailService', () => {
       eventId: 'event-2',
       to: 'recipient@example.com',
       template: 'email-verification',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
       context: {
         verificationUrl: 'https://chatly.test/auth/verify-email?token=abc',
       },

@@ -147,21 +147,17 @@ class ChatRealtimeService implements ChatRealtime {
     );
     _socket = socket;
 
-    socket.onAny((event, data) {
-      debugPrint('WS IN  $event: $data');
-    });
-    socket.onAnyOutgoing((String event, [dynamic data]) {
-      debugPrint('WS OUT $event: $data');
-    });
-    socket.onConnect((_) {
-      debugPrint('WS CONNECTED: ${socket.id}');
-    });
-    socket.onDisconnect((reason) {
-      debugPrint('WS DISCONNECTED: $reason');
-    });
-    socket.onConnectError((error) {
-      debugPrint('WS CONNECT ERROR: $error');
-    });
+    if (kDebugMode) {
+      socket.onConnect((_) {
+        debugPrint('WS CONNECTED: ${socket.id}');
+      });
+      socket.onDisconnect((reason) {
+        debugPrint('WS DISCONNECTED: $reason');
+      });
+      socket.onConnectError((error) {
+        debugPrint('WS CONNECT ERROR: $error');
+      });
+    }
 
     socket.onConnect((_) {
       if (!_isCurrent(generation, socket)) return;
